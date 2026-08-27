@@ -15,6 +15,7 @@ type StageStat = { name: string; start: number; end: number; lost: number; recov
 type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
 type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
 type StageEnding = { world: string; code: string; title: string; line: string; lost: number; recovered: number; endFragments: number };
+type ArcadeKind = "orb" | "hazard" | "dodge";
 
 type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
@@ -31,7 +32,7 @@ const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Op
 
 const stages: Stage[] = [
   {
-    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", color: "#071d28", accent: "#47f5ce",
+    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", color: "#75cfe3", accent: "#22f0c4",
     story: "전송 버튼이 눌리는 순간, 영상 조각들이 작은 전송 요정 ‘픽셀’로 깨어났다. 첫 관문은 방 안의 공유기다.",
     lesson: "가까운 거리도 벽과 전자기기의 간섭을 받는다.",
     events: [
@@ -41,7 +42,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "도시", place: "광케이블 → 교환기", distance: "28 km", color: "#17112e", accent: "#aa82ff",
+    name: "도시", place: "광케이블 → 교환기", distance: "28 km", color: "#7d6bc7", accent: "#e0c1ff",
     story: "픽셀은 빛으로 변해 도시의 광케이블에 뛰어들었다. 하지만 퇴근 시간의 데이터가 도로처럼 밀려든다.",
     lesson: "빠른 회선도 사용자가 몰리면 대역폭 병목이 생긴다.",
     events: [
@@ -51,7 +52,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", color: "#071936", accent: "#64bfff",
+    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", color: "#4f98d8", accent: "#b8ecff",
     story: "영상 속 마지막 인사가 깨지기 시작했다. 데이터센터의 서버 ‘루미’가 픽셀에게 말한다. ‘사본을 찾으면 되돌릴 수 있어!’",
     lesson: "서버 복제와 캐시는 잃은 정보를 다시 보낼 수 있게 한다.",
     events: [
@@ -61,7 +62,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "바다", place: "해저 케이블", distance: "10,248 km", color: "#001824", accent: "#00dcff",
+    name: "바다", place: "해저 케이블", distance: "10,248 km", color: "#0d8eb9", accent: "#7cf3ff",
     story: "지구 반대편으로 가는 진짜 길은 하늘이 아니라 바다 밑에 있었다. 픽셀은 1만 km 해저 케이블의 어둠 속으로 뛰어든다.",
     lesson: "국제 인터넷의 대부분은 해저 케이블을 지나며 중계기가 약해진 빛을 되살린다.",
     events: [
@@ -72,7 +73,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "하늘", place: "위성 중계", distance: "35,786 km", color: "#150d2c", accent: "#ff83ea",
+    name: "하늘", place: "위성 중계", distance: "35,786 km", color: "#705eb3", accent: "#ffc1f5",
     story: "해저 케이블 끝에서 긴급 위성 중계가 열린다. 폭우가 신호를 삼키기 전에 픽셀은 안테나의 각도를 맞춰야 한다.",
     lesson: "위성은 멀리 돌아가며 거리와 날씨, 안테나 각도의 영향을 받는다.",
     events: [
@@ -82,7 +83,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", color: "#182410", accent: "#caff61",
+    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", color: "#86bb59", accent: "#efff9c",
     story: "친구 하람의 폰이 보인다. 생일까지 남은 시간은 단 몇 초. 픽셀은 영상의 마지막 인사까지 품고 최종 기지국을 향한다.",
     lesson: "마지막 연결과 재전송이 친구가 받는 영상의 완성도를 결정한다.",
     events: [
@@ -112,7 +113,13 @@ const laneX = [-5.2, 0, 5.2];
 const energyNames = ["WAKE", "RUSH", "SYNC", "ABYSS", "ORBIT", "FINAL SPRINT"];
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const routeName = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "균형 경로";
-const pointsFor = (delta: number, kind: EventKind) => Math.max(25, 110 + delta * 5 + (kind === "route" ? 25 : 0));
+const pointsFor = (delta: number, kind: EventKind) => {
+  if (kind === "route") return 65;
+  if (delta >= 10) return 150;
+  if (delta > 0) return 115;
+  if (delta === 0) return 45;
+  return -Math.min(90, 30 + Math.abs(delta) * 3);
+};
 
 function buildJourneyNovel(decisions: DecisionRecord[], stats: StageStat[], fragments: number) {
   const chapters = stages.map((world, index) => {
@@ -169,7 +176,7 @@ function disposeObject(object: THREE.Object3D) {
 
 function createCutePixel(accent: string) {
   const group = new THREE.Group();
-  const cyan = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .35, roughness: .28, metalness: .25 });
+  const cyan = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .9, roughness: .22, metalness: .18 });
   const navy = new THREE.MeshStandardMaterial({ color: "#12344b", roughness: .36, metalness: .6 });
   const white = new THREE.MeshStandardMaterial({ color: "#efffff", emissive: "#bffff4", emissiveIntensity: .35 });
   const dark = new THREE.MeshStandardMaterial({ color: "#06131c", roughness: .25 });
@@ -200,11 +207,11 @@ function createCutePixel(accent: string) {
   antenna.position.set(0, 2.83, .1); group.add(antenna);
   const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(.12, 12, 10), cyan);
   antennaTip.position.set(0, 3.13, .1); group.add(antennaTip);
-  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.25, 20, 16), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .12, depthWrite: false }));
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.25, 20, 16), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .25, depthWrite: false }));
   aura.scale.set(1, 1.55, .72); aura.position.y = 1.35; group.add(aura);
-  const runnerRing = new THREE.Mesh(new THREE.TorusGeometry(1.08, .08, 10, 32), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .9 }));
+  const runnerRing = new THREE.Mesh(new THREE.TorusGeometry(1.12, .12, 10, 32), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .95 }));
   runnerRing.rotation.x = Math.PI / 2; runnerRing.position.y = -.06; group.add(runnerRing);
-  group.scale.setScalar(1.18);
+  group.scale.setScalar(1.45);
   group.position.set(0, .08, 6.1);
   return group;
 }
@@ -264,6 +271,8 @@ export default function Home() {
   const boostRef = useRef(0);
   const boostActiveRef = useRef(false);
   const boostTimerRef = useRef<number | null>(null);
+  const arcadeResolveRef = useRef<(kind: ArcadeKind) => void>(() => {});
+  const arcadeToastTimerRef = useRef<number | null>(null);
 
   const [screen, setScreen] = useState<Screen>("intro");
   const [stageIndex, setStageIndex] = useState(0);
@@ -278,7 +287,7 @@ export default function Home() {
   const [chapterFlash, setChapterFlash] = useState(false);
   const [stageEnding, setStageEnding] = useState<StageEnding | null>(null);
   const [combo, setCombo] = useState(0);
-  const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit">("");
+  const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit" | "dash">("");
   const [boostCharge, setBoostCharge] = useState(0);
   const [boostActive, setBoostActive] = useState(false);
   const [motionReduced, setMotionReduced] = useState(false);
@@ -293,6 +302,7 @@ export default function Home() {
   const [submitState, setSubmitState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
   const [webglError, setWebglError] = useState(false);
+  const [arcadeToast, setArcadeToast] = useState<{ kind: ArcadeKind; text: string } | null>(null);
 
   const loadLeaderboard = useCallback(async () => {
     try {
@@ -314,19 +324,22 @@ export default function Home() {
   useEffect(() => () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
+    if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
   }, []);
 
   const stage = stages[stageIndex];
   const challenge = isRoute ? routeChallenge : stage.events[eventIndex];
-  const baseSpeeds = [8.5, 11, 13.5, 16, 18.5, 21];
-  const speed = baseSpeeds[stageIndex] + eventIndex * 1.25 + (isRoute ? 1.5 : 0) + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
   const courseTotal = stage.events.length + (stageIndex < stages.length - 1 ? 1 : 0);
   const courseIndex = isRoute ? stage.events.length : eventIndex;
+  const globalWave = [0, 4, 8, 12, 17, 21][stageIndex] + courseIndex;
+  const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
 
   const move = useCallback((direction: -1 | 1) => {
     const next = Math.max(0, Math.min(2, laneRef.current + direction)) as Lane;
+    if (next === laneRef.current) return;
     laneRef.current = next;
     engineRef.current?.setLane(next);
+    setGameEffect("dash"); window.setTimeout(() => setGameEffect(""), 160);
   }, []);
 
   const activateBoost = useCallback(() => {
@@ -340,6 +353,39 @@ export default function Home() {
       boostActiveRef.current = false; setBoostActive(false); engineRef.current?.setBoost(false);
     }, 2800);
   }, [screen, stage.accent]);
+
+  const resolveArcade = useCallback((kind: ArcadeKind) => {
+    if (screen !== "playing") return;
+    if (kind === "orb") {
+      scoreRef.current += boostActiveRef.current ? 40 : 20;
+      comboRef.current = Math.min(9, comboRef.current + 1);
+      boostRef.current = Math.min(100, boostRef.current + 6);
+      setScore(scoreRef.current); setCombo(comboRef.current); setBoostCharge(boostRef.current);
+      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+40" : "+20"} · 정보 구슬` });
+      engineRef.current?.triggerEffect(1, stage.accent);
+    } else if (kind === "hazard") {
+      const damage = boostActiveRef.current ? 3 : 4;
+      const nextFragments = clamp(fragmentsRef.current - damage);
+      const applied = fragmentsRef.current - nextFragments;
+      fragmentsRef.current = nextFragments;
+      scoreRef.current = Math.max(0, scoreRef.current - 40);
+      comboRef.current = 0;
+      stageLostRef.current += applied;
+      setFragments(nextFragments); setScore(scoreRef.current); setCombo(0); setLostTotal((value) => value + applied);
+      setGameEffect("hit"); setArcadeToast({ kind, text: `−40 · 신호 충돌 · 조각 −${applied}` });
+      engineRef.current?.triggerEffect(-4, stage.accent);
+      window.setTimeout(() => setGameEffect(""), 300);
+    } else {
+      scoreRef.current += boostActiveRef.current ? 30 : 15;
+      comboRef.current = Math.min(9, comboRef.current + 1);
+      setScore(scoreRef.current); setCombo(comboRef.current);
+      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+30" : "+15"} · 위험 회피` });
+    }
+    if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
+    arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
+  }, [screen, stage.accent]);
+
+  useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -365,24 +411,27 @@ export default function Home() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(stage.color);
-    scene.fog = new THREE.Fog(stage.color, 25, 105);
+    scene.fog = new THREE.Fog(stage.color, 45, 145);
     const camera = new THREE.PerspectiveCamera(55, 1, .1, 180);
     camera.position.set(0, 6.35, 13.6);
     camera.lookAt(0, 1.45, -18);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.42;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.className = "three-canvas";
     mount.appendChild(renderer.domElement);
 
-    const ambient = new THREE.HemisphereLight("#dffcff", "#061019", 2.5); scene.add(ambient);
-    const key = new THREE.DirectionalLight(stage.accent, 4.2); key.position.set(-7, 13, 7); key.castShadow = true; scene.add(key);
-    const rim = new THREE.PointLight(stage.accent, 25, 40); rim.position.set(0, 4, 2); scene.add(rim);
+    const ambient = new THREE.HemisphereLight("#f1ffff", "#17485d", 4.4); scene.add(ambient);
+    const key = new THREE.DirectionalLight("#ffffff", 6.2); key.position.set(-7, 13, 7); key.castShadow = true; scene.add(key);
+    const rim = new THREE.PointLight(stage.accent, 38, 48); rim.position.set(0, 4, 2); scene.add(rim);
 
-    const roadMat = new THREE.MeshStandardMaterial({ color: "#152630", roughness: .78, metalness: .08 });
+    const roadMat = new THREE.MeshStandardMaterial({ color: "#35596b", emissive: "#1b4350", emissiveIntensity: .5, roughness: .68, metalness: .12 });
     const road = new THREE.Mesh(new THREE.PlaneGeometry(18, 220), roadMat);
     road.rotation.x = -Math.PI / 2; road.position.set(0, 0, -92); road.receiveShadow = true; scene.add(road);
-    const railMat = new THREE.MeshStandardMaterial({ color: "#31505f", metalness: .55, roughness: .38 });
+    const railMat = new THREE.MeshStandardMaterial({ color: "#9bc7d5", emissive: stage.accent, emissiveIntensity: .18, metalness: .62, roughness: .28 });
     [-9.15, 9.15].forEach((x) => {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(.38, .65, 220), railMat);
       rail.position.set(x, .32, -92); scene.add(rail);
@@ -391,19 +440,19 @@ export default function Home() {
     const markings: THREE.Mesh[] = [];
     const markMat = new THREE.MeshBasicMaterial({ color: "#b7d9e2", transparent: true, opacity: .46 });
     [-2.95, 2.95].forEach((x) => {
-      for (let z = -108; z < 16; z += 8) {
-        const mark = new THREE.Mesh(new THREE.PlaneGeometry(.12, 3.3), markMat);
+      for (let z = -112; z < 16; z += 6) {
+        const mark = new THREE.Mesh(new THREE.PlaneGeometry(.16, 2.8), markMat);
         mark.rotation.x = -Math.PI / 2; mark.position.set(x, .012, z); scene.add(mark); markings.push(mark);
       }
     });
 
     const sideProps: THREE.Mesh[] = [];
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < 54; i++) {
       const height = 1.5 + (i % 6) * .75;
       const geometry = i % 3 === 0 ? new THREE.CylinderGeometry(.28, .48, height, 8) : new THREE.BoxGeometry(.8 + (i % 2) * .5, height, .8);
-      const material = new THREE.MeshStandardMaterial({ color: i % 2 ? "#183543" : "#244a55", emissive: stage.accent, emissiveIntensity: .04, roughness: .55 });
+      const material = new THREE.MeshStandardMaterial({ color: i % 2 ? "#34768b" : "#56a5b5", emissive: stage.accent, emissiveIntensity: .17, roughness: .48 });
       const prop = new THREE.Mesh(geometry, material);
-      prop.position.set((i % 2 ? 1 : -1) * (11 + (i % 4) * 2.3), height / 2, -106 + i * 4.9);
+      prop.position.set((i % 2 ? 1 : -1) * (10.5 + (i % 4) * 1.8), height / 2, -112 + i * 3.1);
       scene.add(prop); sideProps.push(prop);
     }
 
@@ -417,12 +466,12 @@ export default function Home() {
     starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
     const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: stage.accent, size: .12, transparent: true, opacity: .62 })); scene.add(stars);
 
-    const speedLinePositions = new Float32Array(72 * 6);
+    const speedLinePositions = new Float32Array(160 * 6);
     for (let i = 0; i < speedLinePositions.length; i += 6) {
       const x = (Math.random() - .5) * 30;
       const y = .5 + Math.random() * 12;
       const z = -120 + Math.random() * 135;
-      speedLinePositions.set([x, y, z, x, y, z + 2.5 + Math.random() * 5], i);
+      speedLinePositions.set([x, y, z, x, y, z + 7 + Math.random() * 7], i);
     }
     const speedLineGeometry = new THREE.BufferGeometry();
     speedLineGeometry.setAttribute("position", new THREE.BufferAttribute(speedLinePositions, 3));
@@ -436,6 +485,7 @@ export default function Home() {
     let targetLane: Lane = laneRef.current;
     let activeGroup: THREE.Group | null = null;
     let challengeSpeed = speed;
+    let worldSpeed = speed;
     let hit = false;
     let lastHud = 0;
     let animationId = 0;
@@ -444,7 +494,9 @@ export default function Home() {
     let targetFov = 55;
     let baseFov = 55;
     let speedMultiplier = 1;
+    let arcadeClock = .38;
     const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
+    const arcadeItems: { group: THREE.Group; kind: "orb" | "hazard"; lane: Lane; resolved: boolean }[] = [];
     const targetBackground = new THREE.Color(stage.color);
     const clock = new THREE.Clock();
 
@@ -465,11 +517,38 @@ export default function Home() {
       activeGroup = null;
     };
 
+    const removeArcadeItem = (index: number) => {
+      const item = arcadeItems[index];
+      scene.remove(item.group); disposeObject(item.group); arcadeItems.splice(index, 1);
+    };
+
+    const spawnArcadeItem = () => {
+      const lane = Math.floor(Math.random() * 3) as Lane;
+      const kind = Math.random() < .6 ? "orb" : "hazard";
+      const group = new THREE.Group();
+      if (kind === "orb") {
+        const glow = new THREE.MeshStandardMaterial({ color: "#fff7a8", emissive: "#ffe44d", emissiveIntensity: 2.6, roughness: .12 });
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(.5, 18, 14), glow); group.add(orb);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(.82, .095, 10, 28), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .9 }));
+        ring.rotation.x = Math.PI / 2; group.add(ring);
+      } else {
+        const danger = new THREE.MeshStandardMaterial({ color: "#ff385f", emissive: "#ff173f", emissiveIntensity: 1.8, roughness: .28 });
+        const core = new THREE.Mesh(new THREE.IcosahedronGeometry(.76, 0), danger); group.add(core);
+        for (let i = 0; i < 4; i++) {
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(.2, .8, 7), danger);
+          spike.rotation.z = Math.PI / 2; spike.rotation.y = i * Math.PI / 2; spike.position.set(Math.cos(i * Math.PI / 2) * .76, 0, Math.sin(i * Math.PI / 2) * .76); group.add(spike);
+        }
+      }
+      group.position.set(laneX[lane], kind === "orb" ? 1.15 : .85, -30);
+      scene.add(group); arcadeItems.push({ group, kind, lane, resolved: false });
+    };
+
     const engine: Engine = {
       spawnChallenge(nextChallenge, accent, nextSpeed) {
         removeChallenge();
         hit = false;
-        challengeSpeed = nextSpeed;
+        challengeSpeed = Math.min(nextSpeed, 23);
+        worldSpeed = nextSpeed;
         const group = new THREE.Group();
         group.position.z = -54;
         nextChallenge.options.forEach((option, index) => {
@@ -494,14 +573,14 @@ export default function Home() {
       },
       setLane(nextLane) { targetLane = nextLane; },
       setEnergy(level, nextRoute) {
-        baseFov = 51 + level * 1.45 + (nextRoute === "fast" ? 5 : nextRoute === "safe" ? -2 : 0);
-        targetFov = baseFov + (boostActiveRef.current ? 8 : 0);
+        baseFov = [58, 61, 65, 69, 73, 77][level - 1] + (nextRoute === "fast" ? 3 : nextRoute === "safe" ? -1 : 0);
+        targetFov = baseFov + (boostActiveRef.current ? 11 : 0);
         speedLineMaterial.opacity = Math.min(.72, .12 + level * .085 + (nextRoute === "fast" ? .2 : 0));
         key.intensity = 3.2 + level * .55;
       },
       setBoost(active) {
-        speedMultiplier = active ? 1.42 : 1;
-        targetFov = baseFov + (active ? 8 : 0);
+        speedMultiplier = active ? 1.58 : 1;
+        targetFov = baseFov + (active ? 11 : 0);
         speedLineMaterial.opacity = active ? .95 : Math.min(.72, .12 + (stageIndex + 1) * .085 + (routeRef.current === "fast" ? .2 : 0));
       },
       triggerEffect(delta, accent) {
@@ -520,6 +599,7 @@ export default function Home() {
         window.removeEventListener("resize", resize);
         cancelAnimationFrame(animationId);
         removeChallenge();
+        while (arcadeItems.length) removeArcadeItem(arcadeItems.length - 1);
         disposeObject(scene);
         renderer.dispose();
         renderer.domElement.remove();
@@ -532,22 +612,41 @@ export default function Home() {
       const dt = Math.min(clock.getDelta(), .05);
       elapsed += dt;
       const travel = challengeSpeed * speedMultiplier * dt;
-      markings.forEach((mark) => { mark.position.z += travel; if (mark.position.z > 16) mark.position.z -= 128; });
-      sideProps.forEach((prop) => { prop.position.z += travel * .78; if (prop.position.z > 18) prop.position.z -= 132; });
+      const worldTravel = worldSpeed * speedMultiplier * 1.8 * dt;
+      markings.forEach((mark) => { mark.position.z += worldTravel; if (mark.position.z > 16) mark.position.z -= 132; });
+      sideProps.forEach((prop) => { prop.position.z += worldTravel * .88; if (prop.position.z > 18) prop.position.z -= 136; });
       const positions = stars.geometry.attributes.position as THREE.BufferAttribute;
       const starArray = positions.array as Float32Array;
       for (let i = 2; i < starArray.length; i += 3) {
-        starArray[i] += travel * .34;
+        starArray[i] += worldTravel * .48;
         if (starArray[i] > 15) starArray[i] = -115;
       }
       positions.needsUpdate = true;
       const lineAttribute = speedLines.geometry.attributes.position as THREE.BufferAttribute;
       const lineArray = lineAttribute.array as Float32Array;
       for (let i = 2; i < lineArray.length; i += 6) {
-        lineArray[i] += travel * 1.7; lineArray[i + 3] += travel * 1.7;
+        lineArray[i] += worldTravel * 2.1; lineArray[i + 3] += worldTravel * 2.1;
         if (lineArray[i] > 18) { lineArray[i] -= 142; lineArray[i + 3] -= 142; }
       }
       lineAttribute.needsUpdate = true;
+
+      arcadeClock -= dt;
+      if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -23)) {
+        spawnArcadeItem();
+        arcadeClock = Math.max(.72, 1.15 - (worldSpeed - 11.5) * .018);
+      }
+      for (let i = arcadeItems.length - 1; i >= 0; i--) {
+        const item = arcadeItems[i];
+        item.group.position.z += worldTravel * 1.12;
+        item.group.rotation.y += dt * (item.kind === "orb" ? 4.8 : 7.2);
+        item.group.position.y += Math.sin(elapsed * 8 + i) * dt * .18;
+        if (!item.resolved && item.group.position.z >= 4.7) {
+          item.resolved = true;
+          if (item.lane === laneRef.current) arcadeResolveRef.current(item.kind);
+          else if (item.kind === "hazard") arcadeResolveRef.current("dodge");
+        }
+        if (item.group.position.z > 13) removeArcadeItem(i);
+      }
 
       for (let i = effects.length - 1; i >= 0; i--) {
         const effect = effects[i];
@@ -615,12 +714,12 @@ export default function Home() {
 
     if (isRoute) {
       const nextRoute = option.route ?? "balanced";
-      const routeDelta = boostActiveRef.current ? Math.round(option.delta * .5) : option.delta;
+      const routeDelta = boostActiveRef.current ? Math.round(option.delta * .75) : option.delta;
       const nextFragments = clamp(fragmentsRef.current + routeDelta);
       const applied = nextFragments - fragmentsRef.current;
       const earnedPoints = pointsFor(option.delta, "route") * (boostActiveRef.current ? 2 : 1);
       fragmentsRef.current = nextFragments;
-      scoreRef.current += earnedPoints;
+      scoreRef.current = Math.max(0, scoreRef.current + earnedPoints);
       routeRef.current = nextRoute;
       setFragments(nextFragments);
       setScore(scoreRef.current);
@@ -644,8 +743,8 @@ export default function Home() {
           const nextStage = stageIndex + 1;
           stageStartRef.current = fragmentsRef.current; stageLostRef.current = 0; stageRecoveredRef.current = 0;
           setStageEnding(null); setStageIndex(nextStage); setEventIndex(0); setIsRoute(false); setChapterFlash(true); setRadio(stages[nextStage].story);
-          window.setTimeout(() => setChapterFlash(false), 1250);
-        }, 1500);
+          window.setTimeout(() => setChapterFlash(false), 650);
+        }, 900);
       }, 420);
       return;
     }
@@ -653,14 +752,16 @@ export default function Home() {
     let delta = option.delta;
     if (routeRef.current === "fast") delta = delta < 0 ? Math.round(delta * 1.25) : Math.round(delta * .82);
     if (routeRef.current === "safe") delta = delta < 0 ? Math.round(delta * .72) : Math.round(delta * 1.2);
-    if (boostActiveRef.current && delta < 0) delta = Math.round(delta * .45);
+    if (boostActiveRef.current && delta < 0) delta = Math.round(delta * .75);
     const nextFragments = clamp(fragmentsRef.current + delta);
     const applied = nextFragments - fragmentsRef.current;
     const nextCombo = delta >= 0 ? Math.min(9, comboRef.current + 1) : 0;
     comboRef.current = nextCombo;
-    const earnedPoints = Math.round(pointsFor(delta, challenge.type) * (1 + nextCombo * .08) * (boostActiveRef.current ? 2 : 1));
+    const basePoints = pointsFor(delta, challenge.type);
+    const routeScore = routeRef.current === "fast" ? (basePoints > 0 ? 1.35 : 1.2) : routeRef.current === "safe" ? (basePoints > 0 ? .8 : .7) : 1;
+    const earnedPoints = Math.round(basePoints > 0 ? basePoints * (1 + nextCombo * .08) * routeScore * (boostActiveRef.current ? 2 : 1) : basePoints * routeScore);
     fragmentsRef.current = nextFragments;
-    scoreRef.current += earnedPoints;
+    scoreRef.current = Math.max(0, scoreRef.current + earnedPoints);
     setFragments(nextFragments);
     setScore(scoreRef.current);
     setCombo(nextCombo);
@@ -688,7 +789,7 @@ export default function Home() {
           const ending = stageEndings[stageIndex];
           setStageEnding({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments });
           setRadio(`픽셀: “${ending.title}!”`);
-          nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 1500);
+          nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 900);
         }
       }
     }, 280);
@@ -701,8 +802,8 @@ export default function Home() {
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
     laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced";
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
-    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
-    window.setTimeout(() => setChapterFlash(false), 1250);
+    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    window.setTimeout(() => setChapterFlash(false), 650);
   };
 
   const grade = useMemo(() => {
@@ -778,7 +879,8 @@ export default function Home() {
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>하나의 스테이지가 멈추지 않고 이어집니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
         {chapterFlash && <div className="chapter-flash"><small>CHAPTER {stageIndex + 1}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
-        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>+{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
+        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
+        {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1}`}><div className="ending-energy"><i /><i /><i /></div><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} CLEAR · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><button className={`boost-button ${boostCharge >= 100 ? "ready" : ""}`} onClick={activateBoost} disabled={boostCharge < 100 || boostActive} style={{ "--boost": `${boostCharge * 3.6}deg` } as React.CSSProperties} aria-label={`부스트 ${boostCharge}%`}><b>{boostActive ? "ON" : `${boostCharge}%`}</b><small>{boostActive ? "OVERDRIVE" : boostCharge >= 100 ? "BOOST!" : "충전"}</small></button><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>

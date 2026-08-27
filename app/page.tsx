@@ -985,7 +985,8 @@ export default function Home() {
         spawnArcadeItem(rewardLane, unlocked, z, unlocked === "hyper" ? 1.08 : 1);
         const dangerLane = ((rewardLane + 1 + (row % 2)) % 3) as Lane;
         spawnArcadeItem(dangerLane, "hazard", z, .92 + energyLevel * .025);
-        if (energyLevel >= 4 && row % 2 === 0) spawnArcadeItem(((rewardLane + 2) % 3) as Lane, "orb", z - 2.5, .82);
+        const addBonusOrb = energyLevel >= 4 ? row % 2 === 0 : energyLevel >= 2 && row === 0;
+        if (addBonusOrb) spawnArcadeItem(((rewardLane + 2) % 3) as Lane, "orb", z - 2.5, .82);
       }
       if (routeRef.current === "fast") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "hazard", -31 - rows * 5.2, 1.08);
       if (routeRef.current === "safe") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "repair", -31 - rows * 5.2, .92);

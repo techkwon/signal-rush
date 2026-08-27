@@ -223,7 +223,11 @@ const pickStageEvents = (index: number) => {
   let picked: Challenge[] = [];
   let signature = "";
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    picked = [pickOne(homePools[index]), ...shuffled([...stages[index].events, ...bonusPools[index]]).slice(0, missionEventCounts[index] - 1)];
+    const defaultWorld = Math.min(6, index + 1);
+    const routeEvents = shuffled([...stages[index].events, ...bonusPools[index]])
+      .slice(0, missionEventCounts[index] - 1)
+      .sort((a, b) => (a.world ?? defaultWorld) - (b.world ?? defaultWorld));
+    picked = [pickOne(homePools[index]), ...routeEvents];
     signature = picked.map((item) => item.kicker).join("|");
     if (signature !== lastStageLayouts[index]) break;
   }
@@ -233,6 +237,7 @@ const pickStageEvents = (index: number) => {
 const pickRouteChallenge = (index: number) => pickOne(routePools[index]);
 const worldNames = ["내 방", "도시망", "데이터센터", "해저 케이블", "위성·하늘", "친구 동네"];
 const stageItemUnlocks = ["신호 조각", "방화벽 실드", "재전송 코어", "광증폭 터보", "캐시 콤보", "라이브 하이퍼"];
+const routeIcon = (node: string) => node.includes("내 방") ? "🏠" : node.includes("친구") ? "📱" : /해저|국제/.test(node) ? "🌊" : /위성|하늘/.test(node) ? "🛰️" : /서버|CDN|캐시/.test(node) ? "🖥️" : /도시|광|유선|교환/.test(node) ? "🏙️" : "📶";
 
 const laneX = [-5.2, 0, 5.2];
 const arcadeNames = [
@@ -631,6 +636,10 @@ export default function Home() {
   const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
   const currentWorld = worldNames[(challenge.world ?? Math.min(6, stageIndex + 1)) - 1];
   const currentUnlock = stageItemUnlocks[stageIndex];
+  const routeNodes = stage.place.split(" → ");
+  const routePosition = Math.min(routeNodes.length - 1, ((courseIndex + progress / 100) / courseTotal) * (routeNodes.length - 1));
+  const routePercent = routeNodes.length > 1 ? (routePosition / (routeNodes.length - 1)) * 100 : 0;
+  const currentRouteNode = routeNodes[Math.min(routeNodes.length - 1, Math.round(routePosition))];
 
   const terminateAtZero = useCallback(() => {
     if (countdown !== null || terminatingRef.current || reviewingRef.current) return;
@@ -1420,9 +1429,13 @@ export default function Home() {
         {countdown !== null && <div className="start-countdown" role="status" aria-live="assertive"><small>TRANSMISSION READY</small><strong key={countdown}>{countdown}</strong><span>친구에게 보낼 준비!</span></div>}
         <header className="live-topbar">
           <div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
-          <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>현재 {currentWorld} · {stage.place} · {stage.distance}</span></div>
+          <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>현재 {currentRouteNode} · {currentWorld} · {stage.distance}</span></div>
           <div className="live-settings"><label className="sound-toggle"><span>{soundOn ? "소리 ON" : "소리 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label><label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label></div>
         </header>
+        <nav className="route-navigator" aria-label={`${stage.payload} 전송 경로와 현재 위치`}>
+          <div className="route-caption"><span>LIVE TRANSMISSION ROUTE</span><strong>{routeIcon(currentRouteNode)} 현재 위치 · {currentRouteNode}</strong><small>{courseIndex + 1}/{courseTotal} 구간</small></div>
+          <div className="route-track"><i><em style={{ width: `${routePercent}%` }} /></i>{routeNodes.map((node, index) => { const nodePercent = routeNodes.length > 1 ? index / (routeNodes.length - 1) * 100 : 0; return <div key={`${node}-${index}`} className={`route-node ${index <= routePosition ? "passed" : ""} ${index === Math.round(routePosition) ? "current" : ""}`} style={{ "--node-x": `${nodePercent}%` } as React.CSSProperties}><span>{routeIcon(node)}</span><b>{node}</b></div>; })}<div className="route-runner" style={{ "--runner-x": `${routePercent}%` } as React.CSSProperties}><span>P</span><small>HERE</small></div></div>
+        </nav>
         <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>{dataPaces[stageIndex]}</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
         <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div><em>NEW · {currentUnlock}</em></div>
         {shield > 0 && <div className={`shield-hud ${combo >= 2 ? "with-combo" : ""}`}><span>방화벽 실드</span><strong>{"◆".repeat(shield)}</strong><small>충돌 피해 자동 방어</small></div>}

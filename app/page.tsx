@@ -111,6 +111,14 @@ const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세�
 
 const laneX = [-5.2, 0, 5.2];
 const energyNames = ["WAKE", "RUSH", "SYNC", "ABYSS", "ORBIT", "FINAL SPRINT"];
+const arcadeNames = [
+  { orb: "깨끗한 신호", hazard: "전자파 간섭" },
+  { orb: "여유 대역폭", hazard: "패킷 충돌" },
+  { orb: "캐시 조각", hazard: "서버 오류" },
+  { orb: "증폭 펄스", hazard: "해저 닻" },
+  { orb: "정렬 신호", hazard: "폭우 간섭" },
+  { orb: "마지막 연결", hazard: "건물 차폐" },
+];
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const routeName = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "균형 경로";
 const pointsFor = (delta: number, kind: EventKind) => {
@@ -195,14 +203,18 @@ function createCutePixel(accent: string) {
     const ear = new THREE.Mesh(new THREE.ConeGeometry(.22, .55, 12), cyan);
     ear.position.set(x, 2.83, 0); ear.rotation.z = x < 0 ? -.24 : .24; group.add(ear);
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.14, .48, 5, 10), navy);
-    arm.position.set(x * 2.75, 1.2, 0); arm.rotation.z = x < 0 ? -.55 : .55; group.add(arm);
+    arm.position.set(x * 2.75, 1.2, 0); arm.rotation.z = x < 0 ? -.55 : .55; arm.userData.limb = "arm"; arm.userData.phase = x < 0 ? 0 : Math.PI; arm.userData.baseZ = arm.rotation.z; group.add(arm);
     const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.17, .46, 5, 10), navy);
-    leg.position.set(x * 1.25, .15, 0); leg.rotation.z = x < 0 ? -.16 : .16; group.add(leg);
+    leg.position.set(x * 1.25, .15, 0); leg.rotation.z = x < 0 ? -.16 : .16; leg.userData.limb = "leg"; leg.userData.phase = x < 0 ? Math.PI : 0; leg.userData.baseZ = leg.rotation.z; group.add(leg);
   });
   const pack = new THREE.Mesh(new THREE.CylinderGeometry(.48, .58, .34, 18), navy);
   pack.rotation.x = Math.PI / 2; pack.position.set(0, 1.15, .72); group.add(pack);
   const core = new THREE.Mesh(new THREE.TorusGeometry(.26, .08, 10, 24), cyan);
   core.position.set(0, 1.15, .94); group.add(core);
+  [-.18, .18].forEach((x) => {
+    const rearEye = new THREE.Mesh(new THREE.SphereGeometry(.075, 10, 8), white);
+    rearEye.position.set(x, 1.18, 1.04); group.add(rearEye);
+  });
   const antenna = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .36, 4, 8), navy);
   antenna.position.set(0, 2.83, .1); group.add(antenna);
   const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(.12, 12, 10), cyan);
@@ -217,35 +229,71 @@ function createCutePixel(accent: string) {
 }
 
 function addLaneObject(container: THREE.Group, kind: EventKind, accent: string, lane: number) {
-  const coral = new THREE.MeshStandardMaterial({ color: "#ff657b", emissive: "#7a1028", emissiveIntensity: .35, roughness: .45 });
-  const cyan = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .55, roughness: .28, metalness: .25 });
-  const steel = new THREE.MeshStandardMaterial({ color: "#17364b", roughness: .32, metalness: .65 });
-  const white = new THREE.MeshStandardMaterial({ color: "#eaffff", emissive: "#b8fff4", emissiveIntensity: .2 });
+  const danger = new THREE.MeshStandardMaterial({ color: "#ff3158", emissive: "#ff173f", emissiveIntensity: 1.45, roughness: .35 });
+  const glow = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 1.15, roughness: .22, metalness: .18 });
+  const steel = new THREE.MeshStandardMaterial({ color: "#244b5d", emissive: "#0b2633", emissiveIntensity: .3, roughness: .38, metalness: .42 });
+  const white = new THREE.MeshStandardMaterial({ color: "#f4ffff", emissive: "#d7ffff", emissiveIntensity: .8, roughness: .18 });
+  const warning = new THREE.MeshStandardMaterial({ color: "#ffc247", emissive: "#ff8a00", emissiveIntensity: 1.1, roughness: .32 });
 
-  if (kind === "hazard" || kind === "bottleneck") {
-    for (let i = 0; i < 5; i++) {
-      const bug = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.SphereGeometry(.45, 14, 10), coral);
-      body.scale.set(1, .82, .9); bug.add(body);
-      const face = new THREE.Mesh(new THREE.BoxGeometry(.54, .2, .08), steel);
-      face.position.set(0, .03, -.39); bug.add(face);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(.055, 8, 6), white);
-      eye.position.set(i % 2 ? -.14 : .14, .04, -.46); bug.add(eye);
-      bug.position.set((i % 3 - 1) * .82, .48, Math.floor(i / 3) * 1.05);
-      container.add(bug);
+  if (kind === "hazard") {
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(.72, 0), danger);
+    core.position.y = 1.15; core.userData.spin = 2.8; container.add(core);
+    for (let i = 0; i < 4; i++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(1.8, .22, .28), danger);
+      blade.position.y = 1.15; blade.rotation.z = i * Math.PI / 4; blade.userData.spin = i % 2 ? -2.2 : 2.2; container.add(blade);
     }
-  } else if (kind === "booster" || kind === "recovery" || kind === "attenuation") {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(.72, .95, .42, 16), steel); base.position.y = .25; container.add(base);
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(.2, .42, 1.65, 14), cyan); tower.position.y = 1.18; container.add(tower);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(.7, .09, 10, 24), cyan); ring.rotation.x = Math.PI / 2; ring.position.y = 1.55; container.add(ring);
-    const orb = new THREE.Mesh(new THREE.SphereGeometry(.28, 14, 10), white); orb.position.y = 2.25; container.add(orb);
+    const warningRing = new THREE.Mesh(new THREE.TorusGeometry(1.25, .08, 8, 28), new THREE.MeshBasicMaterial({ color: "#ff9ab0", transparent: true, opacity: .9 }));
+    warningRing.position.y = 1.15; warningRing.userData.pulse = true; container.add(warningRing);
+  } else if (kind === "bottleneck") {
+    [-1.05, 1.05].forEach((x) => {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(.75, 3.2, 1.35), warning);
+      wall.position.set(x, 1.6, 0); container.add(wall);
+      for (let y = .45; y < 3; y += .65) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(.82, .12, 1.4), danger);
+        stripe.position.set(x, y, -.03); stripe.rotation.z = .22; container.add(stripe);
+      }
+    });
+  } else if (kind === "booster") {
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.12 - i * .18, .11, 10, 32), i === 1 ? white : glow);
+      ring.position.set(0, 1.35, i * .46); ring.userData.spin = 1.8 + i; container.add(ring);
+    }
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.1, 4), white);
+    arrow.position.y = 1.35; arrow.rotation.z = -Math.PI / 2; arrow.userData.pulse = true; container.add(arrow);
+  } else if (kind === "recovery") {
+    for (let i = 0; i < 3; i++) {
+      const server = new THREE.Mesh(new THREE.BoxGeometry(2.15, .62, .9), steel);
+      server.position.set(0, .42 + i * .7, 0); container.add(server);
+      const light = new THREE.Mesh(new THREE.SphereGeometry(.09, 8, 6), glow);
+      light.position.set(.78, .42 + i * .7, -.48); container.add(light);
+    }
+    const plusH = new THREE.Mesh(new THREE.BoxGeometry(1.05, .22, .18), white);
+    const plusV = new THREE.Mesh(new THREE.BoxGeometry(.22, 1.05, .18), white);
+    plusH.position.set(0, 2.72, -.05); plusV.position.copy(plusH.position); plusH.userData.pulse = true; plusV.userData.pulse = true; container.add(plusH, plusV);
+  } else if (kind === "attenuation") {
+    for (let i = 0; i < 4; i++) {
+      const fadeMaterial = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .78 - i * .16 });
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(1.22, .09, 8, 30, Math.PI), fadeMaterial);
+      arc.rotation.z = Math.PI; arc.position.set(0, 1.6, i * .55); container.add(arc);
+      const left = new THREE.Mesh(new THREE.BoxGeometry(.12, 1.7, .12), fadeMaterial); left.position.set(-1.22, .76, i * .55); container.add(left);
+      const right = left.clone(); right.position.x = 1.22; container.add(right);
+    }
+    const weakCore = new THREE.Mesh(new THREE.SphereGeometry(.34, 14, 10), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .42 }));
+    weakCore.position.y = 1.2; weakCore.userData.pulse = true; container.add(weakCore);
   } else {
-    const left = new THREE.Mesh(new THREE.BoxGeometry(.28, 2.8, .32), steel); left.position.set(-1.22, 1.4, 0); container.add(left);
+    const gateColor = kind === "route" ? (lane === 0 ? "#ffb52e" : lane === 2 ? "#55d8ff" : accent) : accent;
+    const gateMat = new THREE.MeshStandardMaterial({ color: gateColor, emissive: gateColor, emissiveIntensity: .95, roughness: .22 });
+    const left = new THREE.Mesh(new THREE.BoxGeometry(.26, 2.9, .36), steel); left.position.set(-1.22, 1.45, 0); container.add(left);
     const right = left.clone(); right.position.x = 1.22; container.add(right);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(2.7, .28, .32), cyan); top.position.y = 2.72; container.add(top);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(2.72, .3, .36), gateMat); top.position.y = 2.82; container.add(top);
     if (kind === "route") {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(.65, .12, 10, 28), new THREE.MeshStandardMaterial({ color: lane === 0 ? "#ffc34e" : lane === 2 ? "#61caff" : accent, emissive: lane === 0 ? "#ffc34e" : lane === 2 ? "#61caff" : accent, emissiveIntensity: .65 }));
-      ring.position.y = 1.25; container.add(ring);
+      for (let i = 0; i < 2; i++) {
+        const arrow = new THREE.Mesh(new THREE.ConeGeometry(.34 + i * .08, .8, 4), gateMat);
+        arrow.position.set(0, .9 + i * .82, 0); arrow.rotation.z = -Math.PI / 2; arrow.userData.pulse = true; container.add(arrow);
+      }
+    } else {
+      const signal = new THREE.Mesh(new THREE.SphereGeometry(.36, 14, 10), white);
+      signal.position.y = 1.35; signal.userData.pulse = true; container.add(signal);
     }
   }
 }
@@ -259,6 +307,7 @@ export default function Home() {
   const scoreRef = useRef(0);
   const comboRef = useRef(0);
   const routeRef = useRef<RouteMode>("balanced");
+  const optionMapRef = useRef<[number, number, number]>([0, 1, 2]);
   const resolvingRef = useRef(false);
   const stageStartRef = useRef(100);
   const stageLostRef = useRef(0);
@@ -361,7 +410,7 @@ export default function Home() {
       comboRef.current = Math.min(9, comboRef.current + 1);
       boostRef.current = Math.min(100, boostRef.current + 6);
       setScore(scoreRef.current); setCombo(comboRef.current); setBoostCharge(boostRef.current);
-      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+40" : "+20"} · 정보 구슬` });
+      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+40" : "+20"} · ${arcadeNames[stageIndex].orb}` });
       engineRef.current?.triggerEffect(1, stage.accent);
     } else if (kind === "hazard") {
       const damage = boostActiveRef.current ? 3 : 4;
@@ -372,18 +421,18 @@ export default function Home() {
       comboRef.current = 0;
       stageLostRef.current += applied;
       setFragments(nextFragments); setScore(scoreRef.current); setCombo(0); setLostTotal((value) => value + applied);
-      setGameEffect("hit"); setArcadeToast({ kind, text: `−40 · 신호 충돌 · 조각 −${applied}` });
+      setGameEffect("hit"); setArcadeToast({ kind, text: `−40 · ${arcadeNames[stageIndex].hazard} · 조각 −${applied}` });
       engineRef.current?.triggerEffect(-4, stage.accent);
       window.setTimeout(() => setGameEffect(""), 300);
     } else {
       scoreRef.current += boostActiveRef.current ? 30 : 15;
       comboRef.current = Math.min(9, comboRef.current + 1);
       setScore(scoreRef.current); setCombo(comboRef.current);
-      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+30" : "+15"} · 위험 회피` });
+      setArcadeToast({ kind, text: `${boostActiveRef.current ? "+30" : "+15"} · ${arcadeNames[stageIndex].hazard} 회피` });
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [screen, stage.accent]);
+  }, [screen, stage.accent, stageIndex]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 
@@ -455,6 +504,8 @@ export default function Home() {
       prop.position.set((i % 2 ? 1 : -1) * (10.5 + (i % 4) * 1.8), height / 2, -112 + i * 3.1);
       scene.add(prop); sideProps.push(prop);
     }
+    const worldRoot = new THREE.Group(); scene.add(worldRoot);
+    const worldProps: THREE.Group[] = [];
 
     const starGeometry = new THREE.BufferGeometry();
     const starPositions = new Float32Array(360);
@@ -494,7 +545,11 @@ export default function Home() {
     let targetFov = 55;
     let baseFov = 55;
     let speedMultiplier = 1;
-    let arcadeClock = .38;
+    let arcadeClock = 3.8;
+    let arcadePattern = 0;
+    let energyLevel = 1;
+    let builtWorldLevel = 0;
+    let challengeStartZ = -54;
     const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
     const arcadeItems: { group: THREE.Group; kind: "orb" | "hazard"; lane: Lane; resolved: boolean }[] = [];
     const targetBackground = new THREE.Color(stage.color);
@@ -517,14 +572,53 @@ export default function Home() {
       activeGroup = null;
     };
 
+    const buildWorldLandmarks = (level: number, accent: string) => {
+      while (worldRoot.children.length) { const child = worldRoot.children[0]; worldRoot.remove(child); disposeObject(child); }
+      worldProps.length = 0;
+      sideProps.forEach((prop) => { prop.visible = false; });
+      const solid = new THREE.MeshStandardMaterial({ color: level === 4 ? "#14566e" : level === 5 ? "#766bb5" : "#3d7284", emissive: accent, emissiveIntensity: .16, roughness: .56 });
+      const lit = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 1.05, roughness: .2 });
+      const pale = new THREE.MeshStandardMaterial({ color: "#eaffff", emissive: accent, emissiveIntensity: .32, roughness: .48 });
+      for (let i = 0; i < 9; i++) {
+        [-1, 1].forEach((side) => {
+          const prop = new THREE.Group();
+          if (level === 1) {
+            const desk = new THREE.Mesh(new THREE.BoxGeometry(3.4, .35, 2), solid); desk.position.y = 1.1; prop.add(desk);
+            const screen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.05, .18), lit); screen.position.set(0, 1.75, 0); prop.add(screen);
+            for (let r = 0; r < 2; r++) { const wifi = new THREE.Mesh(new THREE.TorusGeometry(.45 + r * .28, .045, 6, 22, Math.PI), lit); wifi.rotation.z = Math.PI; wifi.position.set(0, 2.55, 0); prop.add(wifi); }
+          } else if (level === 2) {
+            const height = 4 + (i % 4) * 1.4;
+            const building = new THREE.Mesh(new THREE.BoxGeometry(3.3, height, 3.2), solid); building.position.y = height / 2; prop.add(building);
+            for (let w = 0; w < 3; w++) { const window = new THREE.Mesh(new THREE.BoxGeometry(.38, .28, .08), lit); window.position.set(-.85 + w * .85, 1.4 + (i % 3) * .7, side < 0 ? 1.64 : -1.64); prop.add(window); }
+          } else if (level === 3) {
+            const rack = new THREE.Mesh(new THREE.BoxGeometry(2.6, 5.7, 1.5), solid); rack.position.y = 2.85; prop.add(rack);
+            for (let r = 0; r < 6; r++) { const line = new THREE.Mesh(new THREE.BoxGeometry(2.15, .12, .08), r % 2 ? lit : pale); line.position.set(0, .55 + r * .82, side < 0 ? .79 : -.79); prop.add(line); }
+          } else if (level === 4) {
+            const cable = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, 9.5, 14), solid); cable.rotation.x = Math.PI / 2; cable.position.y = .75; prop.add(cable);
+            for (let b = 0; b < 4; b++) { const bubble = new THREE.Mesh(new THREE.SphereGeometry(.12 + b * .045, 10, 8), pale); bubble.position.set((b % 2) * .7, 1.2 + b * .65, -2 + b * 1.25); prop.add(bubble); }
+            if (i % 3 === 0) { const repeater = new THREE.Mesh(new THREE.TorusGeometry(.82, .14, 10, 24), lit); repeater.position.y = .75; prop.add(repeater); }
+          } else if (level === 5) {
+            for (let c = 0; c < 4; c++) { const cloud = new THREE.Mesh(new THREE.SphereGeometry(1 + c * .12, 12, 9), pale); cloud.position.set((c - 1.5) * 1.15, 2 + (c % 2) * .55, 0); prop.add(cloud); }
+            if (i % 2 === 0) { const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, .7, .7), solid); body.position.y = 4.5; prop.add(body); [-1, 1].forEach((x) => { const panel = new THREE.Mesh(new THREE.BoxGeometry(1.7, .08, .85), lit); panel.position.set(x * 1.35, 4.5, 0); prop.add(panel); }); }
+          } else {
+            const house = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.7, 3), solid); house.position.y = 1.35; prop.add(house);
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(2.55, 1.5, 4), pale); roof.position.y = 3.45; roof.rotation.y = Math.PI / 4; prop.add(roof);
+            const window = new THREE.Mesh(new THREE.BoxGeometry(.85, .9, .08), lit); window.position.set(.65, 1.35, side < 0 ? 1.54 : -1.54); prop.add(window);
+          }
+          prop.position.set(side * (12 + (i % 3) * 1.2), 0, -110 + i * 15);
+          worldRoot.add(prop); worldProps.push(prop);
+        });
+      }
+      roadMat.color.set(level === 4 ? "#174d62" : level === 5 ? "#534c83" : level === 1 ? "#56717c" : "#35596b");
+      railMat.emissive.set(accent);
+    };
+
     const removeArcadeItem = (index: number) => {
       const item = arcadeItems[index];
       scene.remove(item.group); disposeObject(item.group); arcadeItems.splice(index, 1);
     };
 
-    const spawnArcadeItem = () => {
-      const lane = Math.floor(Math.random() * 3) as Lane;
-      const kind = Math.random() < .6 ? "orb" : "hazard";
+    const spawnArcadeItem = (lane: Lane, kind: "orb" | "hazard", z = -30, size = 1) => {
       const group = new THREE.Group();
       if (kind === "orb") {
         const glow = new THREE.MeshStandardMaterial({ color: "#fff7a8", emissive: "#ffe44d", emissiveIntensity: 2.6, roughness: .12 });
@@ -539,8 +633,33 @@ export default function Home() {
           spike.rotation.z = Math.PI / 2; spike.rotation.y = i * Math.PI / 2; spike.position.set(Math.cos(i * Math.PI / 2) * .76, 0, Math.sin(i * Math.PI / 2) * .76); group.add(spike);
         }
       }
-      group.position.set(laneX[lane], kind === "orb" ? 1.15 : .85, -30);
+      group.scale.setScalar(size);
+      group.position.set(laneX[lane], kind === "orb" ? 1.15 : .85, z);
       scene.add(group); arcadeItems.push({ group, kind, lane, resolved: false });
+    };
+
+    const spawnArcadePattern = () => {
+      const mode = (arcadePattern + energyLevel) % 5;
+      const safeLane = Math.floor(Math.random() * 3) as Lane;
+      if (mode === 0) {
+        for (let i = 0; i < 3; i++) spawnArcadeItem(safeLane, "orb", -29 - i * 4.2, 1 - i * .08);
+      } else if (mode === 1) {
+        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === safeLane ? "orb" : "hazard", -30));
+      } else if (mode === 2) {
+        const lanes = energyLevel < 3 ? [0, 1, 2] : [2, 0, 1, 2];
+        lanes.forEach((lane, index) => spawnArcadeItem(lane as Lane, "orb", -29 - index * 4));
+      } else if (mode === 3) {
+        spawnArcadeItem(safeLane, "hazard", -30, 1.12);
+        spawnArcadeItem(((safeLane + 1) % 3) as Lane, "orb", -34);
+        spawnArcadeItem(((safeLane + 2) % 3) as Lane, "orb", -38);
+      } else {
+        const secondSafe = ((safeLane + 1) % 3) as Lane;
+        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === safeLane ? "orb" : "hazard", -30));
+        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === secondSafe ? "orb" : "hazard", -36));
+      }
+      if (routeRef.current === "fast") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "hazard", -43, 1.08);
+      if (routeRef.current === "safe") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "orb", -43, .92);
+      arcadePattern++;
     };
 
     const engine: Engine = {
@@ -550,13 +669,18 @@ export default function Home() {
         challengeSpeed = Math.min(nextSpeed, 23);
         worldSpeed = nextSpeed;
         const group = new THREE.Group();
-        group.position.z = -54;
-        nextChallenge.options.forEach((option, index) => {
+        challengeStartZ = -Math.max(54, challengeSpeed * 3.25);
+        group.position.z = challengeStartZ;
+        const order = [0, 1, 2] as [number, number, number];
+        for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+        optionMapRef.current = order;
+        order.forEach((optionIndex, index) => {
+          const option = nextChallenge.options[optionIndex];
           const laneGroup = new THREE.Group();
           laneGroup.position.x = laneX[index];
-          addLaneObject(laneGroup, nextChallenge.type, accent, index);
+          addLaneObject(laneGroup, nextChallenge.type, accent, optionIndex);
           const texture = labelTexture(option.label, accent);
-          const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 1.12), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false }));
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 1.12), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: true, depthWrite: false }));
           sign.position.set(0, 3.7, 0); sign.renderOrder = 10; laneGroup.add(sign);
           group.add(laneGroup);
         });
@@ -573,14 +697,16 @@ export default function Home() {
       },
       setLane(nextLane) { targetLane = nextLane; },
       setEnergy(level, nextRoute) {
-        baseFov = [58, 61, 65, 69, 73, 77][level - 1] + (nextRoute === "fast" ? 3 : nextRoute === "safe" ? -1 : 0);
-        targetFov = baseFov + (boostActiveRef.current ? 11 : 0);
+        energyLevel = level;
+        if (builtWorldLevel !== level) { buildWorldLandmarks(level, stages[level - 1].accent); builtWorldLevel = level; }
+        baseFov = [58, 60, 63, 66, 69, 72][level - 1] + (nextRoute === "fast" ? 3 : nextRoute === "safe" ? -1 : 0);
+        targetFov = Math.min(82, baseFov + (boostActiveRef.current ? 7 : 0));
         speedLineMaterial.opacity = Math.min(.72, .12 + level * .085 + (nextRoute === "fast" ? .2 : 0));
         key.intensity = 3.2 + level * .55;
       },
       setBoost(active) {
         speedMultiplier = active ? 1.58 : 1;
-        targetFov = baseFov + (active ? 11 : 0);
+        targetFov = Math.min(82, baseFov + (active ? 7 : 0));
         speedLineMaterial.opacity = active ? .95 : Math.min(.72, .12 + (stageIndex + 1) * .085 + (routeRef.current === "fast" ? .2 : 0));
       },
       triggerEffect(delta, accent) {
@@ -615,6 +741,7 @@ export default function Home() {
       const worldTravel = worldSpeed * speedMultiplier * 1.8 * dt;
       markings.forEach((mark) => { mark.position.z += worldTravel; if (mark.position.z > 16) mark.position.z -= 132; });
       sideProps.forEach((prop) => { prop.position.z += worldTravel * .88; if (prop.position.z > 18) prop.position.z -= 136; });
+      worldProps.forEach((prop) => { prop.position.z += worldTravel * .78; if (prop.position.z > 20) prop.position.z -= 135; });
       const positions = stars.geometry.attributes.position as THREE.BufferAttribute;
       const starArray = positions.array as Float32Array;
       for (let i = 2; i < starArray.length; i += 3) {
@@ -631,9 +758,10 @@ export default function Home() {
       lineAttribute.needsUpdate = true;
 
       arcadeClock -= dt;
-      if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -23)) {
-        spawnArcadeItem();
-        arcadeClock = Math.max(.72, 1.15 - (worldSpeed - 11.5) * .018);
+      if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -31)) {
+        spawnArcadePattern();
+        const routePace = routeRef.current === "fast" ? -.14 : routeRef.current === "safe" ? .2 : 0;
+        arcadeClock = Math.max(.9, 1.65 - energyLevel * .08 + routePace);
       }
       for (let i = arcadeItems.length - 1; i >= 0; i--) {
         const item = arcadeItems[i];
@@ -642,7 +770,7 @@ export default function Home() {
         item.group.position.y += Math.sin(elapsed * 8 + i) * dt * .18;
         if (!item.resolved && item.group.position.z >= 4.7) {
           item.resolved = true;
-          if (item.lane === laneRef.current) arcadeResolveRef.current(item.kind);
+          if (Math.abs(player.position.x - laneX[item.lane]) < 1.65) arcadeResolveRef.current(item.kind);
           else if (item.kind === "hazard") arcadeResolveRef.current("dodge");
         }
         if (item.group.position.z > 13) removeArcadeItem(i);
@@ -663,14 +791,27 @@ export default function Home() {
       player.position.y = .15 + Math.sin(elapsed * 10) * .08;
       player.rotation.z = (targetX - player.position.x) * -.045;
       player.rotation.y = Math.sin(elapsed * 3) * .035;
+      player.traverse((part) => {
+        if (!part.userData.limb) return;
+        const stride = Math.sin(elapsed * (8 + energyLevel * .7) + part.userData.phase);
+        part.rotation.z = part.userData.baseZ + stride * (part.userData.limb === "leg" ? .48 : .38);
+      });
       const pulse = 1 + Math.sin(elapsed * 7) * .06;
       rim.intensity = 23 * pulse;
 
       if (activeGroup) {
         activeGroup.position.z += travel;
-        const spatialProgress = clamp(((activeGroup.position.z + 54) / 56) * 100);
+        activeGroup.traverse((part) => {
+          if (part.userData.spin) part.rotation.z += dt * part.userData.spin;
+          if (part.userData.pulse) { const scale = 1 + Math.sin(elapsed * 7) * .08; part.scale.setScalar(scale); }
+        });
+        const spatialProgress = clamp(((activeGroup.position.z - challengeStartZ) / (2 - challengeStartZ)) * 100);
         if (performance.now() - lastHud > 90) { setProgress(spatialProgress); lastHud = performance.now(); }
-        if (!hit && activeGroup.position.z >= 2) { hit = true; resolveRef.current(); }
+        if (!hit && activeGroup.position.z >= 2) {
+          hit = true;
+          laneRef.current = laneX.reduce((best, x, index) => Math.abs(player.position.x - x) < Math.abs(player.position.x - laneX[best]) ? index : best, 0) as Lane;
+          resolveRef.current();
+        }
         if (activeGroup.position.z > 17) removeChallenge();
       }
 
@@ -710,7 +851,7 @@ export default function Home() {
   const resolveChallenge = useCallback(() => {
     if (resolvingRef.current || screen !== "playing") return;
     resolvingRef.current = true;
-    const option = challenge.options[laneRef.current];
+    const option = challenge.options[optionMapRef.current[laneRef.current]];
 
     if (isRoute) {
       const nextRoute = option.route ?? "balanced";
@@ -765,7 +906,11 @@ export default function Home() {
     setFragments(nextFragments);
     setScore(scoreRef.current);
     setCombo(nextCombo);
-    if (!boostActiveRef.current) { boostRef.current = Math.min(100, boostRef.current + (delta >= 0 ? 28 : 18)); setBoostCharge(boostRef.current); }
+    if (!boostActiveRef.current) {
+      const bestDelta = Math.max(...challenge.options.map((item) => item.delta));
+      const charge = option.delta === bestDelta ? 22 : option.delta >= 0 ? 8 : 0;
+      boostRef.current = Math.min(100, boostRef.current + charge); setBoostCharge(boostRef.current);
+    }
     if (applied < 0) { stageLostRef.current += Math.abs(applied); setLostTotal((value) => value + Math.abs(applied)); }
     if (applied > 0) { stageRecoveredRef.current += applied; setRecoveredTotal((value) => value + applied); }
     const record: DecisionRecord = { stage: stage.name, event: challenge.kicker, choice: option.label, detail: option.detail, delta: applied, points: earnedPoints };
@@ -855,10 +1000,15 @@ export default function Home() {
       {screen === "intro" && <section className="story-intro">
         <header className="story-brand"><span>SR</span><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
         <div className="intro-story-copy">
-          <p className="mission-tag">MISSION 01 · 하람의 생일 영상 편지</p>
-          <h1>작은 픽셀,<br /><em>지구를 달리다.</em></h1>
-          <p>전학 간 친구 하람의 생일. 전송 버튼이 눌리는 순간 영상 편지의 100개 조각이 귀여운 전송 요정 <b>‘픽셀’</b>로 깨어납니다. 방 안의 공유기부터 바다 밑 1만 km까지, 멈추지 않고 달려 마음을 전달하세요.</p>
-          <button onClick={startGame}>픽셀과 출발하기 <span>→</span></button>
+          <div className="fight-title" aria-label="시그널 러시, 픽셀 대 전파 방해">
+            <div className="title-burst" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+            <small>PIXEL <b>VS</b> INTERFERENCE</small>
+            <h1><span>SIGNAL</span><i>×</i><em>RUSH</em></h1>
+            <strong>시그널 러시</strong>
+          </div>
+          <p className="mission-tag">MISSION · 영상 조각 100개를 지켜라</p>
+          <p>전학 간 친구 하람의 생일까지 단 한 번의 전송 기회. 귀여운 전송 요정 <b>‘픽셀’</b>이 방 안의 간섭부터 바다 밑 1만 km까지 여섯 세계를 돌파합니다.</p>
+          <button className="battle-start" onClick={startGame}><b>전송 배틀 시작</b><span>RUSH →</span></button>
           <small>방향키·A/D·스와이프로 이동 · 스페이스바로 충전된 부스트 사용</small>
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/packet-squad.png" alt="귀여운 전송 요정 픽셀과 데이터 조각 친구들" /><div className="pixel-speech"><b>픽셀</b><span>“마지막 장면까지 내가 지킬게!”</span></div></div>
@@ -878,7 +1028,7 @@ export default function Home() {
         <div className="energy-hud"><small>ENERGY {String(stageIndex + 1).padStart(2, "0")}</small><strong>{energyNames[stageIndex]}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div></div>
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>하나의 스테이지가 멈추지 않고 이어집니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
-        {chapterFlash && <div className="chapter-flash"><small>CHAPTER {stageIndex + 1}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
+        {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {energyNames[stageIndex]}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1}`}><div className="ending-energy"><i /><i /><i /></div><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} CLEAR · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}

@@ -12,6 +12,8 @@ type Option = { label: string; detail: string; delta: number; route?: RouteMode 
 type Challenge = { type: EventKind; kicker: string; prompt: string; options: [Option, Option, Option] };
 type Stage = { name: string; place: string; distance: string; color: string; accent: string; story: string; lesson: string; events: Challenge[] };
 type StageStat = { name: string; start: number; end: number; lost: number; recovered: number; route: RouteMode };
+type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
+type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
 
 type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
@@ -96,6 +98,24 @@ const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세�
 const laneX = [-5.2, 0, 5.2];
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const routeName = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "균형 경로";
+const pointsFor = (delta: number, kind: EventKind) => Math.max(25, 110 + delta * 5 + (kind === "route" ? 25 : 0));
+
+function buildJourneyNovel(decisions: DecisionRecord[], stats: StageStat[], fragments: number) {
+  const chapters = stages.map((world, index) => {
+    const choices = decisions.filter((item) => item.stage === world.name && !item.route);
+    const turningPoint = choices.reduce<DecisionRecord | null>((picked, item) => !picked || Math.abs(item.delta) > Math.abs(picked.delta) ? item : picked, null);
+    const stat = stats[index];
+    const result = stat ? stat.end < stat.start ? `${stat.start}개의 빛은 ${stat.end}개로 줄었지만` : `${stat.start}개의 빛은 ${stat.end}개로 더 선명해졌고` : "빛은 멈추지 않았고";
+    const moment = turningPoint ? `‘${turningPoint.choice}’을 향해 몸을 던진 순간, ${turningPoint.detail}.` : `${world.place}의 길은 조용히 뒤로 흘러갔다.`;
+    return `${index + 1}장. ${world.name}. ${world.story} 픽셀은 ${moment} ${result}, 작은 발은 다음 세계를 향해 다시 뛰었다.`;
+  });
+  const ending = fragments >= 75
+    ? `마침내 하람의 화면에 영상이 켜졌다. ${fragments}개의 조각이 웃음과 목소리를 이어 붙였다. 픽셀은 화면 가장자리에서 조용히 손을 흔들었다. 멀리 있다는 것은, 연결될 수 없다는 뜻이 아니었다.`
+    : fragments >= 25
+      ? `하람의 화면에는 ${fragments}개의 조각이 별처럼 흩어져 나타났다. 완벽한 영상은 아니었지만, 그 사이로 친구의 마음은 분명히 보였다. 하람은 사라진 문장을 상상하며 답장을 쓰기 시작했다.`
+      : `화면에는 세 점과 희미한 빛만 남았다. 그래도 픽셀은 포기하지 않았다. 실패는 길이 사라진 것이 아니라, 다음 전송에서 다른 길을 고를 수 있다는 표시였으니까.`;
+  return [...chapters, `마지막 장. 친구의 화면. ${ending}`];
+}
 
 function labelTexture(text: string, accent: string) {
   const canvas = document.createElement("canvas");
@@ -166,8 +186,12 @@ function createCutePixel(accent: string) {
   antenna.position.set(0, 2.83, .1); group.add(antenna);
   const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(.12, 12, 10), cyan);
   antennaTip.position.set(0, 3.13, .1); group.add(antennaTip);
-  group.scale.setScalar(.82);
-  group.position.set(0, .15, 5.2);
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.25, 20, 16), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .12, depthWrite: false }));
+  aura.scale.set(1, 1.55, .72); aura.position.y = 1.35; group.add(aura);
+  const runnerRing = new THREE.Mesh(new THREE.TorusGeometry(1.08, .08, 10, 32), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .9 }));
+  runnerRing.rotation.x = Math.PI / 2; runnerRing.position.y = -.06; group.add(runnerRing);
+  group.scale.setScalar(1.18);
+  group.position.set(0, .08, 6.1);
   return group;
 }
 
@@ -211,12 +235,14 @@ export default function Home() {
   const resolveRef = useRef<() => void>(() => {});
   const laneRef = useRef<Lane>(1);
   const fragmentsRef = useRef(100);
+  const scoreRef = useRef(0);
   const routeRef = useRef<RouteMode>("balanced");
   const resolvingRef = useRef(false);
   const stageStartRef = useRef(100);
   const stageLostRef = useRef(0);
   const stageRecoveredRef = useRef(0);
   const statsRef = useRef<StageStat[]>([]);
+  const decisionsRef = useRef<DecisionRecord[]>([]);
   const nextTimerRef = useRef<number | null>(null);
   const pointerStartRef = useRef<number | null>(null);
   const motionReducedRef = useRef(false);
@@ -226,16 +252,40 @@ export default function Home() {
   const [eventIndex, setEventIndex] = useState(0);
   const [isRoute, setIsRoute] = useState(false);
   const [fragments, setFragments] = useState(100);
+  const [score, setScore] = useState(0);
   const [route, setRoute] = useState<RouteMode>("balanced");
   const [progress, setProgress] = useState(0);
   const [radio, setRadio] = useState(stages[0].story);
-  const [outcome, setOutcome] = useState<{ delta: number; text: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ delta: number; points: number; text: string } | null>(null);
   const [chapterFlash, setChapterFlash] = useState(false);
   const [motionReduced, setMotionReduced] = useState(false);
   const [lostTotal, setLostTotal] = useState(0);
   const [recoveredTotal, setRecoveredTotal] = useState(0);
   const [stats, setStats] = useState<StageStat[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [resultStep, setResultStep] = useState<0 | 1 | 2>(0);
+  const [leaderboard, setLeaderboard] = useState<LeaderEntry[]>([]);
+  const [leaderLoading, setLeaderLoading] = useState(true);
+  const [playerName, setPlayerName] = useState("");
+  const [submitState, setSubmitState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [submitMessage, setSubmitMessage] = useState("");
   const [webglError, setWebglError] = useState(false);
+
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      setLeaderLoading(true);
+      const response = await fetch("/api/leaderboard", { cache: "no-store" });
+      if (!response.ok) throw new Error("leaderboard");
+      const data = await response.json() as { entries: LeaderEntry[] };
+      setLeaderboard(data.entries ?? []);
+    } catch {
+      setLeaderboard([]);
+    } finally {
+      setLeaderLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadLeaderboard(); }, [loadLeaderboard]);
 
   useEffect(() => { motionReducedRef.current = motionReduced; }, [motionReduced]);
   useEffect(() => () => {
@@ -277,8 +327,8 @@ export default function Home() {
     scene.background = new THREE.Color(stage.color);
     scene.fog = new THREE.Fog(stage.color, 25, 105);
     const camera = new THREE.PerspectiveCamera(55, 1, .1, 180);
-    camera.position.set(0, 7.2, 12.5);
-    camera.lookAt(0, 1.3, -18);
+    camera.position.set(0, 6.35, 13.6);
+    camera.lookAt(0, 1.45, -18);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -329,7 +379,7 @@ export default function Home() {
 
     const player = createCutePixel(stage.accent); scene.add(player);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: .35 }));
-    shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, .018, 5.2); scene.add(shadow);
+    shadow.scale.setScalar(1.55); shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, .018, 6.1); scene.add(shadow);
 
     let targetLane: Lane = laneRef.current;
     let activeGroup: THREE.Group | null = null;
@@ -433,9 +483,9 @@ export default function Home() {
       scene.fog?.color.lerp(targetBackground, .025);
       if (!motionReducedRef.current) {
         camera.position.x = Math.sin(elapsed * 1.7) * .08;
-        camera.position.y = 7.2 + Math.sin(elapsed * 2.3) * .035;
-      } else { camera.position.x = 0; camera.position.y = 7.2; }
-      camera.lookAt(0, 1.25, -18);
+        camera.position.y = 6.35 + Math.sin(elapsed * 2.3) * .035;
+      } else { camera.position.x = 0; camera.position.y = 6.35; }
+      camera.lookAt(0, 1.45, -18);
       renderer.render(scene, camera);
     };
     animate();
@@ -464,12 +514,18 @@ export default function Home() {
       const nextRoute = option.route ?? "balanced";
       const nextFragments = clamp(fragmentsRef.current + option.delta);
       const applied = nextFragments - fragmentsRef.current;
+      const earnedPoints = pointsFor(option.delta, "route");
       fragmentsRef.current = nextFragments;
+      scoreRef.current += earnedPoints;
       routeRef.current = nextRoute;
       setFragments(nextFragments);
+      setScore(scoreRef.current);
       setRoute(nextRoute);
       setLostTotal((value) => value + Math.abs(Math.min(0, applied)));
-      setOutcome({ delta: applied, text: `${option.label} · ${option.detail}` });
+      const record: DecisionRecord = { stage: stage.name, event: challenge.kicker, choice: option.label, detail: option.detail, delta: applied, points: earnedPoints, route: nextRoute };
+      decisionsRef.current = [...decisionsRef.current, record];
+      setDecisions(decisionsRef.current);
+      setOutcome({ delta: applied, points: earnedPoints, text: `${option.label} · ${option.detail}` });
       setRadio(`픽셀: “${option.label}로 갈게! 멈추지 말고 다음 세계로!”`);
       nextTimerRef.current = window.setTimeout(() => {
         const nextStage = stageIndex + 1;
@@ -492,11 +548,17 @@ export default function Home() {
     if (routeRef.current === "safe") delta = delta < 0 ? Math.round(delta * .72) : Math.round(delta * 1.2);
     const nextFragments = clamp(fragmentsRef.current + delta);
     const applied = nextFragments - fragmentsRef.current;
+    const earnedPoints = pointsFor(delta, challenge.type);
     fragmentsRef.current = nextFragments;
+    scoreRef.current += earnedPoints;
     setFragments(nextFragments);
+    setScore(scoreRef.current);
     if (applied < 0) { stageLostRef.current += Math.abs(applied); setLostTotal((value) => value + Math.abs(applied)); }
     if (applied > 0) { stageRecoveredRef.current += applied; setRecoveredTotal((value) => value + applied); }
-    setOutcome({ delta: applied, text: option.detail });
+    const record: DecisionRecord = { stage: stage.name, event: challenge.kicker, choice: option.label, detail: option.detail, delta: applied, points: earnedPoints };
+    decisionsRef.current = [...decisionsRef.current, record];
+    setDecisions(decisionsRef.current);
+    setOutcome({ delta: applied, points: earnedPoints, text: option.detail });
     setRadio(applied < 0 ? `픽셀: “조각이 흩어졌어! ${option.detail}.”` : applied > 0 ? `루미: “좋아, ${option.detail}.”` : `픽셀: “${option.detail}. 계속 달리자!”`);
 
     nextTimerRef.current = window.setTimeout(() => {
@@ -519,9 +581,9 @@ export default function Home() {
 
   const startGame = () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
-    laneRef.current = 1; fragmentsRef.current = 100; routeRef.current = "balanced";
-    stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = [];
-    setFragments(100); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setOutcome(null); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setScreen("playing");
+    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; routeRef.current = "balanced";
+    stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
+    setFragments(100); setScore(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
     window.setTimeout(() => setChapterFlash(false), 2200);
   };
 
@@ -534,6 +596,37 @@ export default function Home() {
   }, [fragments]);
 
   const worstStage = stats.length ? stats.reduce((a, b) => a.lost > b.lost ? a : b) : null;
+  const novel = useMemo(() => buildJourneyNovel(decisions, stats, fragments), [decisions, fragments, stats]);
+  const feedback = useMemo(() => {
+    const eventChoices = decisions.filter((item) => !item.route);
+    const strongest = eventChoices.length ? eventChoices.reduce((a, b) => a.delta > b.delta ? a : b) : null;
+    const riskiest = eventChoices.length ? eventChoices.reduce((a, b) => a.delta < b.delta ? a : b) : null;
+    const safeRoutes = decisions.filter((item) => item.route === "safe").length;
+    const fastRoutes = decisions.filter((item) => item.route === "fast").length;
+    return [
+      strongest ? { label: "가장 좋은 판단", title: `${strongest.stage} · ${strongest.choice}`, text: `${strongest.detail}. 조건을 읽고 전송에 유리한 길을 찾았습니다.` } : null,
+      riskiest ? { label: "다시 생각할 판단", title: `${riskiest.stage} · ${riskiest.choice}`, text: `${riskiest.detail}. 다음에는 거리·간섭·혼잡 중 무엇이 원인이었는지 먼저 확인해 보세요.` } : null,
+      { label: "경로 전략", title: fastRoutes > safeRoutes ? "속도를 우선한 주행" : safeRoutes > fastRoutes ? "안전을 우선한 주행" : "균형을 택한 주행", text: `빠른 길 ${fastRoutes}회, 안전한 길 ${safeRoutes}회였습니다. 조각이 많을 때는 짧은 길, 위태로울 때는 회복 기회가 많은 길이 유리합니다.` },
+      { label: "다음 도전", title: worstStage ? `${worstStage.name}에서 손실 줄이기` : "조건을 끝까지 관찰하기", text: worstStage ? `${worstStage.name}에서 ${worstStage.lost}개를 잃었습니다. 이 세계의 표지판에서 감쇠·간섭·대역폭 조건을 다시 비교해 보세요.` : "각 표지판의 조건을 끝까지 읽고 경로를 선택해 보세요." },
+    ].filter(Boolean) as { label: string; title: string; text: string }[];
+  }, [decisions, worstStage]);
+
+  const submitScore = async () => {
+    const cleaned = playerName.trim();
+    if (cleaned.length < 2 || cleaned.length > 12) {
+      setSubmitState("error"); setSubmitMessage("이름은 2~12자로 입력해 주세요."); return;
+    }
+    try {
+      setSubmitState("saving"); setSubmitMessage("");
+      const response = await fetch("/api/leaderboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ playerName: cleaned, score, fragments, grade: grade.title }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "등록하지 못했습니다.");
+      setSubmitState("saved"); setSubmitMessage("명예의 전당에 기록했습니다!");
+      await loadLeaderboard();
+    } catch (error) {
+      setSubmitState("error"); setSubmitMessage(error instanceof Error ? error.message : "잠시 후 다시 시도해 주세요.");
+    }
+  };
 
   return (
     <main className={`signal-game ${motionReduced ? "reduced" : ""}`} style={{ "--accent": stage.accent, "--world": stage.color } as React.CSSProperties}
@@ -551,6 +644,7 @@ export default function Home() {
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/packet-squad.png" alt="귀여운 전송 요정 픽셀과 데이터 조각 친구들" /><div className="pixel-speech"><b>픽셀</b><span>“마지막 장면까지 내가 지킬게!”</span></div></div>
         <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>{item.name}</b><small>{item.place}</small></div>)}</div>
+        <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 도착 조각 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
       {screen === "playing" && <section className="live-runner">
@@ -560,18 +654,26 @@ export default function Home() {
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")}</small><b>{stage.name}</b><span>{stage.place} · {stage.distance}</span></div>
           <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
         </header>
-        <div className="fragment-hud"><div><span>도착 중인 영상</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><small>{routeName(route)} · {stage.lesson}</small></div>
+        <div className="fragment-hud"><div><span>도착 중인 영상</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
         <div className="challenge-hud"><span>{isRoute ? "RUNNING ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>표지판을 읽고 달리면서 차선을 바꾸세요</small><div><i style={{ width: `${progress}%` }} /></div></div>
         {chapterFlash && <div className="chapter-flash"><small>CHAPTER {stageIndex + 1}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
-        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><b>{outcome.delta > 0 ? `+${outcome.delta}` : outcome.delta === 0 ? "통과" : outcome.delta}</b><span>{outcome.text}</span></div>}
+        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>+{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b><span>{outcome.text}</span></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><div><b>PIXEL</b><span>달리는 중</span></div><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
       </section>}
 
-      {screen === "result" && <section className="story-result">
-        <div className="ending-card"><span className="ending-mark">{grade.icon}</span><p>도착률 {fragments}%</p><h1>{grade.title}</h1><blockquote>{grade.story}</blockquote><div className="ending-stats"><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div><button onClick={startGame}>픽셀과 다시 달리기 <span>↻</span></button></div>
-        <div className="journey-ending"><div className="friend-screen"><div className="friend-face">H</div><strong>{fragments < 25 ? "…" : "생일 축하해, 하람!"}</strong><span>{fragments >= 50 ? "멀리 있어도 우리는 연결되어 있어." : "사라진 장면을 복구하는 중…"}</span><i style={{ width: `${fragments}%` }} /></div><h2>픽셀이 지나온 여섯 세계</h2><div className="ending-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span>{index + 1}</span><b>{item.name}</b><i><em style={{ width: `${item.end}%` }} /></i><small>{item.start} → {item.end}</small></div>)}</div>{worstStage && <p>가장 많은 조각을 잃은 곳은 <b>{worstStage.name}</b>이었습니다. 픽셀의 다음 도전에서는 어떤 조건을 다르게 고를까요?</p>}</div>
+      {screen === "result" && <section className="result-review">
+        <header className="review-top"><div className="live-brand"><span>SR</span><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
+
+        {resultStep === 0 && <article className="score-review">
+          <div className="score-hero"><span className="ending-mark">{grade.icon}</span><small>FINAL RUN SCORE</small><strong>{score.toLocaleString()}</strong><em>점</em><h1>{grade.title}</h1><p>{grade.story}</p><button onClick={() => setResultStep(1)}>다음 · 나의 이야기 읽기 <span>→</span></button></div>
+          <div className="score-report"><div className="friend-screen"><div className="friend-face">H</div><strong>{fragments < 25 ? "…" : "생일 축하해, 하람!"}</strong><span>{fragments >= 50 ? "멀리 있어도 우리는 연결되어 있어." : "사라진 장면을 복구하는 중…"}</span><i style={{ width: `${fragments}%` }} /></div><div className="score-numbers"><div><span>도착한 조각</span><b>{fragments}<small>/100</small></b></div><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div><h2>여섯 세계 전송 기록</h2><div className="ending-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span>{index + 1}</span><b>{item.name}</b><i><em style={{ width: `${item.end}%` }} /></i><small>{item.start} → {item.end}</small></div>)}</div></div>
+        </article>}
+
+        {resultStep === 1 && <article className="novel-review"><div className="novel-cover"><span>YOUR SIGNAL NOVEL</span><h1>픽셀과<br />여섯 개의 세계</h1><p>내가 고른 길로 완성된 단 하나의 전송 이야기</p><strong>{playerName || "이름 없는 전송자"}</strong></div><div className="novel-pages"><header><small>도착률 {fragments}% · {score.toLocaleString()}점</small><h2>지구 반대편으로 보낸 마음</h2></header>{novel.map((paragraph, index) => <p key={index} className={index === novel.length - 1 ? "novel-ending" : ""}>{paragraph}</p>)}<button onClick={() => setResultStep(2)}>다음 · 선택 피드백 보기 <span>→</span></button></div></article>}
+
+        {resultStep === 2 && <article className="feedback-review"><div className="feedback-copy"><span>MISSION DEBRIEF</span><h1>다음 전송은<br /><em>더 멀리 갑니다.</em></h1><p>정답을 외우는 대신, 이번에 고른 조건과 결과를 연결해 보세요.</p><div className="feedback-grid">{feedback.map((item, index) => <div key={item.label}><span>{String(index + 1).padStart(2, "0")} · {item.label}</span><h2>{item.title}</h2><p>{item.text}</p></div>)}</div></div><aside className="final-actions"><div className="rank-card"><small>FINAL RECORD</small><strong>{score.toLocaleString()}<em>점</em></strong><span>{fragments}% 도착 · {grade.icon}</span></div><div className="honor-submit"><h2>명예의 전당에 기록하기</h2><p>수업에서 알아볼 수 있는 이름이나 별명을 입력하세요.</p><div><input value={playerName} onChange={(event) => setPlayerName(event.target.value.slice(0, 12))} placeholder="이름 또는 별명" aria-label="명예의 전당 이름" disabled={submitState === "saved"} /><button onClick={submitScore} disabled={submitState === "saving" || submitState === "saved"}>{submitState === "saving" ? "기록 중…" : submitState === "saved" ? "기록 완료" : "등록"}</button></div>{submitMessage && <small className={submitState}>{submitMessage}</small>}</div><div className="final-leaderboard"><h2>명예의 전당 TOP 5</h2>{leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id} className={entry.player_name === playerName.trim() && entry.score === score ? "mine" : ""}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}</strong><small>{entry.fragments}%</small></div>) : <p>아직 등록된 기록이 없습니다.</p>}</div><button className="retry-button" onClick={startGame}>점수·이야기·피드백 확인 완료<br /><b>픽셀과 다시 달리기 ↻</b></button></aside></article>}
       </section>}
     </main>
   );

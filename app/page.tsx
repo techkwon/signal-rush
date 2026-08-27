@@ -14,11 +14,14 @@ type Stage = { name: string; place: string; distance: string; color: string; acc
 type StageStat = { name: string; start: number; end: number; lost: number; recovered: number; route: RouteMode };
 type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
 type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
+type StageEnding = { world: string; code: string; title: string; line: string; lost: number; recovered: number; endFragments: number };
 
 type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
   setWorld: (color: string, accent: string) => void;
   setLane: (lane: Lane) => void;
+  setEnergy: (level: number, route: RouteMode) => void;
+  triggerEffect: (delta: number, accent: string) => void;
   destroy: () => void;
 };
 
@@ -89,6 +92,15 @@ const stages: Stage[] = [
   },
 ];
 
+const stageEndings = [
+  { code: "SIGNAL ACQUIRED", title: "방을 빠져나왔다", line: "작은 신호는 벽과 간섭을 뚫고 도시의 거대한 빛길에 올라탔다." },
+  { code: "CITY CLEARED", title: "혼잡을 돌파했다", line: "수천 개의 데이터가 밀려드는 도시에서 픽셀은 비어 있는 한 줄의 대역폭을 찾아냈다." },
+  { code: "MEMORY RESTORED", title: "사라진 장면이 돌아왔다", line: "루미가 건넨 복제 조각들이 영상 속 친구의 목소리를 다시 이어 붙였다." },
+  { code: "OCEAN CROSSED", title: "1만 km의 어둠을 건넜다", line: "위성이 아닌 바다 밑 케이블. 픽셀의 빛은 깊은 바다 끝에서도 꺼지지 않았다." },
+  { code: "ORBIT LOCKED", title: "폭우 너머의 각도를 맞췄다", line: "가장 먼 궤도를 돌아온 신호가 마지막 기지국을 향해 정확히 내려꽂혔다." },
+  { code: "MESSAGE ARRIVED", title: "마음이 화면에 닿았다", line: "마지막 조각이 친구의 폰에 내려앉는 순간, 긴 여정은 한 편의 영상이 되었다." },
+];
+
 const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세계까지 어떤 경로로 달릴까?", [
   O("빠른 길", "거리는 짧지만 다음 장애물이 빨라진다", -3, "fast"),
   O("균형 경로", "거리와 위험을 균형 있게 선택했다", -5, "balanced"),
@@ -96,6 +108,7 @@ const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세�
 ]);
 
 const laneX = [-5.2, 0, 5.2];
+const energyNames = ["WAKE", "RUSH", "SYNC", "ABYSS", "ORBIT", "FINAL SPRINT"];
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const routeName = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "균형 경로";
 const pointsFor = (delta: number, kind: EventKind) => Math.max(25, 110 + delta * 5 + (kind === "route" ? 25 : 0));
@@ -236,6 +249,7 @@ export default function Home() {
   const laneRef = useRef<Lane>(1);
   const fragmentsRef = useRef(100);
   const scoreRef = useRef(0);
+  const comboRef = useRef(0);
   const routeRef = useRef<RouteMode>("balanced");
   const resolvingRef = useRef(false);
   const stageStartRef = useRef(100);
@@ -256,8 +270,11 @@ export default function Home() {
   const [route, setRoute] = useState<RouteMode>("balanced");
   const [progress, setProgress] = useState(0);
   const [radio, setRadio] = useState(stages[0].story);
-  const [outcome, setOutcome] = useState<{ delta: number; points: number; text: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ delta: number; points: number; combo: number; text: string } | null>(null);
   const [chapterFlash, setChapterFlash] = useState(false);
+  const [stageEnding, setStageEnding] = useState<StageEnding | null>(null);
+  const [combo, setCombo] = useState(0);
+  const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit">("");
   const [motionReduced, setMotionReduced] = useState(false);
   const [lostTotal, setLostTotal] = useState(0);
   const [recoveredTotal, setRecoveredTotal] = useState(0);
@@ -294,7 +311,8 @@ export default function Home() {
 
   const stage = stages[stageIndex];
   const challenge = isRoute ? routeChallenge : stage.events[eventIndex];
-  const speed = route === "fast" ? 15 : route === "safe" ? 10 : 12;
+  const baseSpeeds = [9.5, 12, 11, 14, 17, 19];
+  const speed = baseSpeeds[stageIndex] + (route === "fast" ? 4 : route === "safe" ? -2 : 0);
 
   const move = useCallback((direction: -1 | 1) => {
     const next = Math.max(0, Math.min(2, laneRef.current + direction)) as Lane;
@@ -377,6 +395,18 @@ export default function Home() {
     starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
     const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: stage.accent, size: .12, transparent: true, opacity: .62 })); scene.add(stars);
 
+    const speedLinePositions = new Float32Array(72 * 6);
+    for (let i = 0; i < speedLinePositions.length; i += 6) {
+      const x = (Math.random() - .5) * 30;
+      const y = .5 + Math.random() * 12;
+      const z = -120 + Math.random() * 135;
+      speedLinePositions.set([x, y, z, x, y, z + 2.5 + Math.random() * 5], i);
+    }
+    const speedLineGeometry = new THREE.BufferGeometry();
+    speedLineGeometry.setAttribute("position", new THREE.BufferAttribute(speedLinePositions, 3));
+    const speedLineMaterial = new THREE.LineBasicMaterial({ color: stage.accent, transparent: true, opacity: .18, depthWrite: false });
+    const speedLines = new THREE.LineSegments(speedLineGeometry, speedLineMaterial); scene.add(speedLines);
+
     const player = createCutePixel(stage.accent); scene.add(player);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: .35 }));
     shadow.scale.setScalar(1.55); shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, .018, 6.1); scene.add(shadow);
@@ -388,6 +418,9 @@ export default function Home() {
     let lastHud = 0;
     let animationId = 0;
     let elapsed = 0;
+    let impactShake = 0;
+    let targetFov = 55;
+    const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
     const targetBackground = new THREE.Color(stage.color);
     const clock = new THREE.Clock();
 
@@ -433,8 +466,26 @@ export default function Home() {
         key.color.set(accent); rim.color.set(accent);
         sideProps.forEach((prop) => ((prop.material as THREE.MeshStandardMaterial).emissive.set(accent)));
         (stars.material as THREE.PointsMaterial).color.set(accent);
+        speedLineMaterial.color.set(accent);
       },
       setLane(nextLane) { targetLane = nextLane; },
+      setEnergy(level, nextRoute) {
+        targetFov = 51 + level * 1.45 + (nextRoute === "fast" ? 5 : nextRoute === "safe" ? -2 : 0);
+        speedLineMaterial.opacity = Math.min(.72, .12 + level * .085 + (nextRoute === "fast" ? .2 : 0));
+        key.intensity = 3.2 + level * .55;
+      },
+      triggerEffect(delta, accent) {
+        impactShake = delta < 0 ? .6 : .18;
+        const color = delta < 0 ? "#ff4568" : accent;
+        const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .95, depthWrite: false });
+        const group = new THREE.Group();
+        for (let i = 0; i < 3; i++) {
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(.75 + i * .28, .07, 8, 28), material);
+          ring.rotation.x = Math.PI / 2; ring.position.y = .18 + i * .1; group.add(ring);
+        }
+        group.position.set(laneX[laneRef.current], .25, 5.35);
+        scene.add(group); effects.push({ group, life: 1, material });
+      },
       destroy() {
         window.removeEventListener("resize", resize);
         cancelAnimationFrame(animationId);
@@ -460,6 +511,22 @@ export default function Home() {
         if (starArray[i] > 15) starArray[i] = -115;
       }
       positions.needsUpdate = true;
+      const lineAttribute = speedLines.geometry.attributes.position as THREE.BufferAttribute;
+      const lineArray = lineAttribute.array as Float32Array;
+      for (let i = 2; i < lineArray.length; i += 6) {
+        lineArray[i] += travel * 1.7; lineArray[i + 3] += travel * 1.7;
+        if (lineArray[i] > 18) { lineArray[i] -= 142; lineArray[i + 3] -= 142; }
+      }
+      lineAttribute.needsUpdate = true;
+
+      for (let i = effects.length - 1; i >= 0; i--) {
+        const effect = effects[i];
+        effect.life -= dt * 1.8;
+        effect.group.scale.multiplyScalar(1 + dt * 3.8);
+        effect.group.position.y += dt * .7;
+        effect.material.opacity = Math.max(0, effect.life);
+        if (effect.life <= 0) { scene.remove(effect.group); disposeObject(effect.group); effects.splice(i, 1); }
+      }
 
       const targetX = laneX[targetLane];
       player.position.x += (targetX - player.position.x) * Math.min(1, dt * 9);
@@ -482,9 +549,13 @@ export default function Home() {
       bg.lerp(targetBackground, .025);
       scene.fog?.color.lerp(targetBackground, .025);
       if (!motionReducedRef.current) {
-        camera.position.x = Math.sin(elapsed * 1.7) * .08;
-        camera.position.y = 6.35 + Math.sin(elapsed * 2.3) * .035;
+        const shake = impactShake > 0 ? (Math.random() - .5) * impactShake : 0;
+        camera.position.x = Math.sin(elapsed * 1.7) * .08 + shake;
+        camera.position.y = 6.35 + Math.sin(elapsed * 2.3) * .035 + shake * .35;
       } else { camera.position.x = 0; camera.position.y = 6.35; }
+      impactShake = Math.max(0, impactShake - dt * 2.4);
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3.5);
+      camera.updateProjectionMatrix();
       camera.lookAt(0, 1.45, -18);
       renderer.render(scene, camera);
     };
@@ -496,13 +567,15 @@ export default function Home() {
     if (screen !== "playing" || !engineRef.current) return;
     resolvingRef.current = false;
     engineRef.current.setWorld(stage.color, stage.accent);
+    engineRef.current.setEnergy(stageIndex + 1, route);
     engineRef.current.spawnChallenge(challenge, stage.accent, speed);
-  }, [challenge, screen, speed, stage.accent, stage.color]);
+  }, [challenge, route, screen, speed, stage.accent, stage.color, stageIndex]);
 
   const finishStage = useCallback((endFragments: number) => {
     const completed: StageStat = { name: stage.name, start: stageStartRef.current, end: endFragments, lost: stageLostRef.current, recovered: stageRecoveredRef.current, route: routeRef.current };
     statsRef.current = [...statsRef.current, completed];
     setStats(statsRef.current);
+    return completed;
   }, [stage.name]);
 
   const resolveChallenge = useCallback(() => {
@@ -525,7 +598,9 @@ export default function Home() {
       const record: DecisionRecord = { stage: stage.name, event: challenge.kicker, choice: option.label, detail: option.detail, delta: applied, points: earnedPoints, route: nextRoute };
       decisionsRef.current = [...decisionsRef.current, record];
       setDecisions(decisionsRef.current);
-      setOutcome({ delta: applied, points: earnedPoints, text: `${option.label} · ${option.detail}` });
+      setOutcome({ delta: applied, points: earnedPoints, combo: comboRef.current, text: `${option.label} · ${option.detail}` });
+      engineRef.current?.triggerEffect(1, stage.accent);
+      setGameEffect("boost"); window.setTimeout(() => setGameEffect(""), 360);
       setRadio(`픽셀: “${option.label}로 갈게! 멈추지 말고 다음 세계로!”`);
       nextTimerRef.current = window.setTimeout(() => {
         const nextStage = stageIndex + 1;
@@ -548,17 +623,22 @@ export default function Home() {
     if (routeRef.current === "safe") delta = delta < 0 ? Math.round(delta * .72) : Math.round(delta * 1.2);
     const nextFragments = clamp(fragmentsRef.current + delta);
     const applied = nextFragments - fragmentsRef.current;
-    const earnedPoints = pointsFor(delta, challenge.type);
+    const nextCombo = delta >= 0 ? Math.min(9, comboRef.current + 1) : 0;
+    comboRef.current = nextCombo;
+    const earnedPoints = Math.round(pointsFor(delta, challenge.type) * (1 + nextCombo * .08));
     fragmentsRef.current = nextFragments;
     scoreRef.current += earnedPoints;
     setFragments(nextFragments);
     setScore(scoreRef.current);
+    setCombo(nextCombo);
     if (applied < 0) { stageLostRef.current += Math.abs(applied); setLostTotal((value) => value + Math.abs(applied)); }
     if (applied > 0) { stageRecoveredRef.current += applied; setRecoveredTotal((value) => value + applied); }
     const record: DecisionRecord = { stage: stage.name, event: challenge.kicker, choice: option.label, detail: option.detail, delta: applied, points: earnedPoints };
     decisionsRef.current = [...decisionsRef.current, record];
     setDecisions(decisionsRef.current);
-    setOutcome({ delta: applied, points: earnedPoints, text: option.detail });
+    setOutcome({ delta: applied, points: earnedPoints, combo: nextCombo, text: option.detail });
+    engineRef.current?.triggerEffect(delta, stage.accent);
+    setGameEffect(delta < 0 ? "hit" : "boost"); window.setTimeout(() => setGameEffect(""), 360);
     setRadio(applied < 0 ? `픽셀: “조각이 흩어졌어! ${option.detail}.”` : applied > 0 ? `루미: “좋아, ${option.detail}.”` : `픽셀: “${option.detail}. 계속 달리자!”`);
 
     nextTimerRef.current = window.setTimeout(() => {
@@ -566,13 +646,19 @@ export default function Home() {
       if (eventIndex < stage.events.length - 1) {
         setEventIndex((value) => value + 1);
       } else {
-        finishStage(nextFragments);
-        if (stageIndex < stages.length - 1) {
-          setIsRoute(true);
-          setRadio("루미: “앞에 세 갈래 경로야. 지금 남은 조각을 보고 달리면서 골라!”");
-        } else {
-          setScreen("result");
-        }
+        const completed = finishStage(nextFragments);
+        const ending = stageEndings[stageIndex];
+        setStageEnding({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments });
+        setRadio(`픽셀: “${ending.title}. 하지만 아직 전송은 끝나지 않았어!”`);
+        nextTimerRef.current = window.setTimeout(() => {
+          setStageEnding(null);
+          if (stageIndex < stages.length - 1) {
+            setIsRoute(true);
+            setRadio("루미: “앞에 세 갈래 경로야. 지금 남은 조각을 보고 달리면서 골라!”");
+          } else {
+            setScreen("result");
+          }
+        }, 1650);
       }
     }, 850);
   }, [challenge, eventIndex, finishStage, isRoute, screen, stage.events.length, stageIndex]);
@@ -581,9 +667,9 @@ export default function Home() {
 
   const startGame = () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
-    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; routeRef.current = "balanced";
+    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; routeRef.current = "balanced";
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
-    setFragments(100); setScore(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    setFragments(100); setScore(0); setCombo(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
     window.setTimeout(() => setChapterFlash(false), 2200);
   };
 
@@ -647,17 +733,21 @@ export default function Home() {
         <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 도착 조각 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
-      {screen === "playing" && <section className="live-runner">
+      {screen === "playing" && <section className={`live-runner energy-${stageIndex + 1} route-${route} ${gameEffect}`}>
         <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
+        <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
         <header className="live-topbar">
           <div className="live-brand"><span>SR</span><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")}</small><b>{stage.name}</b><span>{stage.place} · {stage.distance}</span></div>
           <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
         </header>
         <div className="fragment-hud"><div><span>도착 중인 영상</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
+        <div className="energy-hud"><small>ENERGY {String(stageIndex + 1).padStart(2, "0")}</small><strong>{energyNames[stageIndex]}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div></div>
+        {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className="challenge-hud"><span>{isRoute ? "RUNNING ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>표지판을 읽고 달리면서 차선을 바꾸세요</small><div><i style={{ width: `${progress}%` }} /></div></div>
         {chapterFlash && <div className="chapter-flash"><small>CHAPTER {stageIndex + 1}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
-        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>+{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b><span>{outcome.text}</span></div>}
+        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>+{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
+        {stageEnding && <div className={`stage-ending ending-${stageIndex + 1}`}><div className="ending-energy"><i /><i /><i /></div><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} CLEAR · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><div><b>PIXEL</b><span>달리는 중</span></div><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}

@@ -16,7 +16,8 @@ type DecisionRecord = { stage: string; event: string; choice: string; detail: st
 type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
 type StageEnding = { world: string; code: string; title: string; line: string; lost: number; recovered: number; endFragments: number };
 type StageReview = StageEnding & { stageScore: number; totalScore: number; startFragments: number; story: string };
-type ArcadeKind = "orb" | "hazard" | "dodge";
+type ArcadeItemKind = "orb" | "hazard" | "shield" | "repair" | "burst" | "cache" | "hyper";
+type ArcadeKind = ArcadeItemKind | "dodge";
 type SoundCue = "start" | "move" | "collect" | "dodge" | "hit" | "boost" | "clear" | "fail";
 type GameAudio = { ctx: AudioContext; master: GainNode; music: GainNode; fx: GainNode; timer: number | null; step: number };
 
@@ -231,6 +232,7 @@ const pickStageEvents = (index: number) => {
 };
 const pickRouteChallenge = (index: number) => pickOne(routePools[index]);
 const worldNames = ["내 방", "도시망", "데이터센터", "해저 케이블", "위성·하늘", "친구 동네"];
+const stageItemUnlocks = ["신호 조각", "방화벽 실드", "재전송 코어", "광증폭 터보", "캐시 콤보", "라이브 하이퍼"];
 
 const laneX = [-5.2, 0, 5.2];
 const arcadeNames = [
@@ -512,6 +514,7 @@ export default function Home() {
   const motionReducedRef = useRef(false);
   const boostRef = useRef(0);
   const boostActiveRef = useRef(false);
+  const shieldRef = useRef(0);
   const boostTimerRef = useRef<number | null>(null);
   const arcadeResolveRef = useRef<(kind: ArcadeKind) => void>(() => {});
   const arcadeToastTimerRef = useRef<number | null>(null);
@@ -537,6 +540,7 @@ export default function Home() {
   const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit" | "dash">("");
   const [boostCharge, setBoostCharge] = useState(0);
   const [boostActive, setBoostActive] = useState(false);
+  const [shield, setShield] = useState(0);
   const [motionReduced, setMotionReduced] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [lostTotal, setLostTotal] = useState(0);
@@ -608,6 +612,7 @@ export default function Home() {
   const globalWave = [0, 7, 15, 24, 34, 45][stageIndex] + courseIndex;
   const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
   const currentWorld = worldNames[(challenge.world ?? Math.min(6, stageIndex + 1)) - 1];
+  const currentUnlock = stageItemUnlocks[stageIndex];
 
   const terminateAtZero = useCallback(() => {
     if (terminatingRef.current || reviewingRef.current) return;
@@ -659,7 +664,61 @@ export default function Home() {
       setArcadeToast({ kind, text: `${boostActiveRef.current ? "+40" : "+20"} · ${arcadeNames[stageIndex].orb}` });
       playFx("collect");
       engineRef.current?.triggerEffect(1, stage.accent);
+    } else if (kind === "shield") {
+      shieldRef.current = Math.min(2, shieldRef.current + 1);
+      scoreRef.current += 30;
+      setShield(shieldRef.current); setScore(scoreRef.current);
+      setArcadeToast({ kind, text: `+30 · 방화벽 실드 ${shieldRef.current}개` });
+      playFx("boost");
+      engineRef.current?.triggerEffect(1, "#55d8ff");
+    } else if (kind === "repair") {
+      const nextFragments = clamp(fragmentsRef.current + 4);
+      const recovered = nextFragments - fragmentsRef.current;
+      fragmentsRef.current = nextFragments;
+      scoreRef.current += 45;
+      stageRecoveredRef.current += recovered;
+      setFragments(nextFragments); setScore(scoreRef.current); setRecoveredTotal((value) => value + recovered);
+      setArcadeToast({ kind, text: `+45 · 재전송 코어 · 조각 +${recovered}` });
+      playFx("collect");
+      engineRef.current?.triggerEffect(1, "#37e78a");
+    } else if (kind === "burst") {
+      scoreRef.current += 65;
+      boostRef.current = Math.min(100, boostRef.current + 24);
+      comboRef.current = Math.min(9, comboRef.current + 1);
+      setScore(scoreRef.current); setBoostCharge(boostRef.current); setCombo(comboRef.current);
+      setArcadeToast({ kind, text: "+65 · 광증폭 터보 · 부스트 +24" });
+      playFx("boost");
+      engineRef.current?.triggerEffect(1, "#bd63ff");
+    } else if (kind === "cache") {
+      scoreRef.current += 90;
+      comboRef.current = Math.min(9, comboRef.current + 2);
+      setScore(scoreRef.current); setCombo(comboRef.current);
+      setArcadeToast({ kind, text: `+90 · 캐시 콤보 · CHAIN ×${comboRef.current}` });
+      playFx("collect");
+      engineRef.current?.triggerEffect(1, "#ff9f43");
+    } else if (kind === "hyper") {
+      const nextFragments = clamp(fragmentsRef.current + 5);
+      const recovered = nextFragments - fragmentsRef.current;
+      fragmentsRef.current = nextFragments;
+      scoreRef.current += 130;
+      boostRef.current = 100;
+      stageRecoveredRef.current += recovered;
+      setFragments(nextFragments); setScore(scoreRef.current); setBoostCharge(100); setRecoveredTotal((value) => value + recovered);
+      setArcadeToast({ kind, text: `+130 · 라이브 하이퍼 · BOOST READY` });
+      playFx("boost");
+      engineRef.current?.triggerEffect(1, "#ffe45e");
     } else if (kind === "hazard") {
+      if (shieldRef.current > 0) {
+        shieldRef.current -= 1;
+        scoreRef.current += 15;
+        setShield(shieldRef.current); setScore(scoreRef.current);
+        setArcadeToast({ kind: "shield", text: `실드 방어! · 남은 실드 ${shieldRef.current}` });
+        playFx("dodge");
+        engineRef.current?.triggerEffect(1, "#55d8ff");
+        if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
+        arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
+        return;
+      }
       const damage = boostActiveRef.current ? 3 : 4;
       const nextFragments = clamp(fragmentsRef.current - damage);
       const applied = fragmentsRef.current - nextFragments;
@@ -804,7 +863,7 @@ export default function Home() {
     let challengeStartZ = -54;
     let courseSeconds = stages[0].courseSeconds;
     const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
-    const arcadeItems: { group: THREE.Group; kind: "orb" | "hazard"; lane: Lane; resolved: boolean }[] = [];
+    const arcadeItems: { group: THREE.Group; kind: ArcadeItemKind; lane: Lane; resolved: boolean }[] = [];
     const targetBackground = new THREE.Color(stage.color);
     const clock = new THREE.Clock();
 
@@ -871,47 +930,65 @@ export default function Home() {
       scene.remove(item.group); disposeObject(item.group); arcadeItems.splice(index, 1);
     };
 
-    const spawnArcadeItem = (lane: Lane, kind: "orb" | "hazard", z = -30, size = 1) => {
+    const spawnArcadeItem = (lane: Lane, kind: ArcadeItemKind, z = -30, size = 1) => {
       const group = new THREE.Group();
       if (kind === "orb") {
         const glow = new THREE.MeshStandardMaterial({ color: "#fff7a8", emissive: "#ffe44d", emissiveIntensity: 2.6, roughness: .12 });
         const orb = new THREE.Mesh(new THREE.SphereGeometry(.5, 18, 14), glow); group.add(orb);
         const ring = new THREE.Mesh(new THREE.TorusGeometry(.82, .095, 10, 28), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .9 }));
         ring.rotation.x = Math.PI / 2; group.add(ring);
-      } else {
+      } else if (kind === "hazard") {
         const danger = new THREE.MeshStandardMaterial({ color: "#ff385f", emissive: "#ff173f", emissiveIntensity: 1.8, roughness: .28 });
         const core = new THREE.Mesh(new THREE.IcosahedronGeometry(.76, 0), danger); group.add(core);
         for (let i = 0; i < 4; i++) {
           const spike = new THREE.Mesh(new THREE.ConeGeometry(.2, .8, 7), danger);
           spike.rotation.z = Math.PI / 2; spike.rotation.y = i * Math.PI / 2; spike.position.set(Math.cos(i * Math.PI / 2) * .76, 0, Math.sin(i * Math.PI / 2) * .76); group.add(spike);
         }
+      } else if (kind === "shield") {
+        const cyan = new THREE.MeshStandardMaterial({ color: "#bff8ff", emissive: "#27cfff", emissiveIntensity: 2.1, roughness: .16, metalness: .25 });
+        const shell = new THREE.Mesh(new THREE.DodecahedronGeometry(.68, 0), cyan); shell.scale.set(1, 1.15, .45); group.add(shell);
+        const guard = new THREE.Mesh(new THREE.TorusGeometry(.84, .1, 10, 30), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .92 })); guard.rotation.x = Math.PI / 2; group.add(guard);
+      } else if (kind === "repair") {
+        const green = new THREE.MeshStandardMaterial({ color: "#d9ffe7", emissive: "#28e77e", emissiveIntensity: 2.2, roughness: .16 });
+        const core = new THREE.Mesh(new THREE.BoxGeometry(.92, .92, .92), green); core.rotation.set(.35, .5, .2); group.add(core);
+        const horizontal = new THREE.Mesh(new THREE.BoxGeometry(1.18, .24, .2), green); const vertical = new THREE.Mesh(new THREE.BoxGeometry(.24, 1.18, .2), green); horizontal.position.z = -.58; vertical.position.z = -.58; group.add(horizontal, vertical);
+      } else if (kind === "burst") {
+        const violet = new THREE.MeshStandardMaterial({ color: "#e1c0ff", emissive: "#a947ff", emissiveIntensity: 2.4, roughness: .14 });
+        const bolt = new THREE.Mesh(new THREE.ConeGeometry(.48, 1.5, 6), violet); bolt.rotation.z = -Math.PI / 2; group.add(bolt);
+        for (let i = 0; i < 2; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(.72 + i * .23, .08, 8, 26), violet); ring.rotation.y = Math.PI / 2; group.add(ring); }
+      } else if (kind === "cache") {
+        const orange = new THREE.MeshStandardMaterial({ color: "#fff0c2", emissive: "#ff922b", emissiveIntensity: 2.2, roughness: .18 });
+        for (let i = 0; i < 3; i++) { const cube = new THREE.Mesh(new THREE.BoxGeometry(.62, .62, .62), orange); cube.position.set((i - 1) * .55, Math.abs(i - 1) * .35, 0); cube.rotation.set(i * .2, i * .45, .2); group.add(cube); }
+      } else {
+        const gold = new THREE.MeshStandardMaterial({ color: "#fffbd0", emissive: "#ffe13b", emissiveIntensity: 3, roughness: .08, metalness: .32 });
+        const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(.55, .17, 48, 8), gold); group.add(knot);
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(1, .07, 8, 32), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .9 })); halo.rotation.x = Math.PI / 2; group.add(halo);
       }
       group.scale.setScalar(size);
-      group.position.set(laneX[lane], kind === "orb" ? 1.15 : .85, z);
+      group.position.set(laneX[lane], kind === "hazard" ? .85 : 1.15, z);
       scene.add(group); arcadeItems.push({ group, kind, lane, resolved: false });
     };
 
     const spawnArcadePattern = () => {
-      const mode = (arcadePattern + energyLevel) % 5;
-      const safeLane = Math.floor(Math.random() * 3) as Lane;
-      if (mode === 0) {
-        for (let i = 0; i < 3; i++) spawnArcadeItem(safeLane, "orb", -29 - i * 4.2, 1 - i * .08);
-      } else if (mode === 1) {
-        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === safeLane ? "orb" : "hazard", -30));
-      } else if (mode === 2) {
-        const lanes = energyLevel < 3 ? [0, 1, 2] : [2, 0, 1, 2];
-        lanes.forEach((lane, index) => spawnArcadeItem(lane as Lane, "orb", -29 - index * 4));
-      } else if (mode === 3) {
-        spawnArcadeItem(safeLane, "hazard", -30, 1.12);
-        spawnArcadeItem(((safeLane + 1) % 3) as Lane, "orb", -34);
-        spawnArcadeItem(((safeLane + 2) % 3) as Lane, "orb", -38);
-      } else {
-        const secondSafe = ((safeLane + 1) % 3) as Lane;
-        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === safeLane ? "orb" : "hazard", -30));
-        ([0, 1, 2] as Lane[]).forEach((lane) => spawnArcadeItem(lane, lane === secondSafe ? "orb" : "hazard", -36));
+      const rowCounts = [2, 2, 3, 3, 4, 5];
+      const rewards: ArcadeItemKind[] = ["orb"];
+      if (energyLevel >= 2) rewards.push("shield");
+      if (energyLevel >= 3) rewards.push("repair");
+      if (energyLevel >= 4) rewards.push("burst");
+      if (energyLevel >= 5) rewards.push("cache");
+      if (energyLevel >= 6) rewards.push("hyper");
+      const rows = rowCounts[energyLevel - 1];
+      for (let row = 0; row < rows; row++) {
+        const rewardLane = ((arcadePattern + row + Math.floor(Math.random() * 2)) % 3) as Lane;
+        const unlocked = rewards[Math.min(rewards.length - 1, Math.random() < .42 ? rewards.length - 1 : Math.floor(Math.random() * rewards.length))];
+        const z = -27 - row * 5.2;
+        spawnArcadeItem(rewardLane, unlocked, z, unlocked === "hyper" ? 1.08 : 1);
+        const dangerLane = ((rewardLane + 1 + (row % 2)) % 3) as Lane;
+        spawnArcadeItem(dangerLane, "hazard", z, .92 + energyLevel * .025);
+        if (energyLevel >= 4 && row % 2 === 0) spawnArcadeItem(((rewardLane + 2) % 3) as Lane, "orb", z - 2.5, .82);
       }
-      if (routeRef.current === "fast") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "hazard", -43, 1.08);
-      if (routeRef.current === "safe") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "orb", -43, .92);
+      if (routeRef.current === "fast") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "hazard", -31 - rows * 5.2, 1.08);
+      if (routeRef.current === "safe") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "repair", -31 - rows * 5.2, .92);
       arcadePattern++;
     };
 
@@ -1016,15 +1093,15 @@ export default function Home() {
       lineAttribute.needsUpdate = true;
 
       arcadeClock -= dt;
-      if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -31)) {
+      if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -46 - energyLevel * 3)) {
         spawnArcadePattern();
         const routePace = routeRef.current === "fast" ? -.14 : routeRef.current === "safe" ? .2 : 0;
-        arcadeClock = Math.max(.9, 1.65 - energyLevel * .08 + routePace);
+        arcadeClock = Math.max(1.35, 2.55 - energyLevel * .12 + routePace);
       }
       for (let i = arcadeItems.length - 1; i >= 0; i--) {
         const item = arcadeItems[i];
         item.group.position.z += worldTravel * 1.12;
-        item.group.rotation.y += dt * (item.kind === "orb" ? 4.8 : 7.2);
+        item.group.rotation.y += dt * (item.kind === "hazard" ? 7.2 : item.kind === "hyper" ? 6.2 : 4.8);
         item.group.position.y += Math.sin(elapsed * 8 + i) * dt * .18;
         if (!item.resolved && item.group.position.z >= 4.7) {
           item.resolved = true;
@@ -1198,11 +1275,11 @@ export default function Home() {
     if (soundOnRef.current) { ensureAudio(); playGameFx(audioRef.current, "start"); }
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
-    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
+    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; shieldRef.current = 0; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
     setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0));
-    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
     window.setTimeout(() => setChapterFlash(false), 650);
   };
 
@@ -1224,11 +1301,13 @@ export default function Home() {
     comboRef.current = 0;
     boostRef.current = 0;
     boostActiveRef.current = false;
+    shieldRef.current = 0;
     setFragments(100);
     setRoute("balanced");
     setCombo(0);
     setBoostCharge(0);
     setBoostActive(false);
+    setShield(0);
     engineRef.current?.setBoost(false);
     setActiveEvents(pickStageEvents(nextStage));
     setActiveRoute(pickRouteChallenge(nextStage));
@@ -1320,7 +1399,8 @@ export default function Home() {
           <div className="live-settings"><label className="sound-toggle"><span>{soundOn ? "소리 ON" : "소리 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label><label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label></div>
         </header>
         <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>{dataPaces[stageIndex]}</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
-        <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div></div>
+        <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div><em>NEW · {currentUnlock}</em></div>
+        {shield > 0 && <div className={`shield-hud ${combo >= 2 ? "with-combo" : ""}`}><span>방화벽 실드</span><strong>{"◆".repeat(shield)}</strong><small>충돌 피해 자동 방어</small></div>}
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
         {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize} · {dataPaces[stageIndex]}</small><strong>{stage.payload}</strong><span>{stage.story}</span></div>}

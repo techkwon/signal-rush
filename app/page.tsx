@@ -10,7 +10,7 @@ type Screen = "intro" | "playing" | "result";
 type EventKind = "gate" | "hazard" | "attenuation" | "booster" | "bottleneck" | "recovery" | "route";
 type Option = { label: string; detail: string; delta: number; route?: RouteMode };
 type Challenge = { type: EventKind; kicker: string; prompt: string; options: [Option, Option, Option] };
-type Stage = { name: string; place: string; distance: string; payload: string; payloadSize: string; courseSeconds: number; color: string; accent: string; story: string; lesson: string; events: Challenge[] };
+type Stage = { name: string; place: string; distance: string; payload: string; payloadSize: string; courseSeconds: number; color: string; accent: string; story: string; friendReply: string; lesson: string; events: Challenge[] };
 type StageStat = { name: string; start: number; end: number; lost: number; recovered: number; route: RouteMode };
 type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
 type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
@@ -34,8 +34,9 @@ const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Op
 
 const stages: Stage[] = [
   {
-    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.8, color: "#75cfe3", accent: "#22f0c4",
-    story: "짧은 생일 문장이 작은 전송 요정 ‘픽셀’로 깨어났다. 가장 가벼운 4 KB 문자부터 전송을 시작한다.",
+    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.8, color: "#dff9ff", accent: "#00b895",
+    story: "첫 번째 임무는 친구에게 생일 축하 문자를 보내는 일이다. 픽셀은 4 KB 문자 조각 100개를 품고 공유기를 향해 달린다.",
+    friendReply: "문자 잘 받았어! 멀리서도 먼저 축하해 줘서 고마워.",
     lesson: "가까운 거리도 벽과 전자기기의 간섭을 받는다.",
     events: [
       E("gate", "첫 신호", "공유기까지 어떤 신호를 탈까?", [O("5GHz 직선", "짧은 거리에서 빠르고 선명했다", 9), O("벽 두 개", "벽을 지날 때 신호가 크게 약해졌다", -13), O("2.4GHz 우회", "조금 느리지만 멀리까지 안정적이었다", 5)]),
@@ -44,8 +45,9 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "도시", place: "광케이블 → 교환기", distance: "28 km", payload: "이미지", payloadSize: "5 MB", courseSeconds: 3.2, color: "#7d6bc7", accent: "#e0c1ff",
-    story: "문자에 생일 사진이 붙으며 데이터가 5 MB 이미지로 커졌다. 픽셀은 붐비는 도시 광케이블로 뛰어든다.",
+    name: "도시", place: "광케이블 → 교환기", distance: "28 km", payload: "이미지", payloadSize: "5 MB", courseSeconds: 3.2, color: "#f0ebff", accent: "#7d55d9",
+    story: "두 번째 임무는 함께 찍은 생일 사진을 보내는 일이다. 새로 준비한 5 MB 이미지 조각 100개가 도시 광케이블로 출발한다.",
+    friendReply: "우리 함께 찍은 사진이다! 화면도 선명하게 잘 보여.",
     lesson: "빠른 회선도 사용자가 몰리면 대역폭 병목이 생긴다.",
     events: [
       E("bottleneck", "퇴근 시간", "어느 회선이 덜 붐빌까?", [O("상업 지구", "동시에 접속한 사람이 너무 많았다", -14), O("전용 회선", "넓은 대역폭으로 빠르게 통과했다", 7), O("주택가", "혼잡 때문에 일부 조각이 지연됐다", -6)]),
@@ -54,8 +56,9 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.6, color: "#4f98d8", accent: "#b8ecff",
-    story: "사진에 목소리가 더해져 25 MB 음성이 되었다. 서버 ‘루미’가 말한다. ‘사본을 찾으면 되돌릴 수 있어!’",
+    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.6, color: "#e7f5ff", accent: "#1688d4",
+    story: "세 번째 임무는 직접 녹음한 축하 음성을 보내는 일이다. 새로 출발한 25 MB 음성 조각은 서버 사본의 도움을 받을 수 있다.",
+    friendReply: "목소리가 또렷하게 들려! 바로 옆에서 말하는 것 같아.",
     lesson: "서버 복제와 캐시는 잃은 정보를 다시 보낼 수 있게 한다.",
     events: [
       E("bottleneck", "서버 대기열", "비어 있는 서버를 찾아라.", [O("서버 A", "요청이 몰려 오래 기다렸다", -10), O("서버 B", "여유 있는 서버가 바로 응답했다", 4), O("서버 C", "점검 중인 서버에 갇혔다", -15)]),
@@ -64,8 +67,9 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "바다", place: "해저 케이블", distance: "10,248 km", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4, color: "#0d8eb9", accent: "#7cf3ff",
-    story: "사진과 목소리가 합쳐져 180 MB 동영상이 되었다. 픽셀은 더 무거운 조각을 품고 1만 km 해저 케이블로 들어간다.",
+    name: "바다", place: "해저 케이블", distance: "10,248 km", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4, color: "#dff7ff", accent: "#009bc2",
+    story: "네 번째 임무는 생일 영상 편지를 보내는 일이다. 새로 준비한 180 MB 동영상 조각은 1만 km 해저 케이블을 건넌다.",
+    friendReply: "영상 편지가 끝까지 재생됐어. 바다 밑으로 왔다니 놀라워!",
     lesson: "국제 인터넷의 대부분은 해저 케이블을 지나며 중계기가 약해진 빛을 되살린다.",
     events: [
       E("attenuation", "긴 감쇠", "중계기가 가까운 선로를 찾아라.", [O("깊은 해구", "중계기 없는 긴 구간에서 크게 약해졌다", -15), O("중계 선로", "가까운 중계기가 감쇠를 줄였다", -5), O("우회 케이블", "거리가 늘어 신호가 더 줄었다", -11)]),
@@ -75,8 +79,9 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "하늘", place: "위성 중계", distance: "35,786 km", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 4.4, color: "#705eb3", accent: "#ffc1f5",
-    story: "여러 장면과 고화질 정보가 합쳐져 1.2 GB 대용량 데이터가 되었다. 폭우 속에서 위성 각도를 맞춰야 한다.",
+    name: "하늘", place: "위성 중계", distance: "35,786 km", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 4.4, color: "#f5ecff", accent: "#b044b6",
+    story: "다섯 번째 임무는 추억을 모은 1.2 GB 대용량 파일을 보내는 일이다. 새 데이터 조각 100개가 폭우와 긴 위성 경로에 도전한다.",
+    friendReply: "추억 파일을 전부 열었어! 사진과 영상이 정말 많다.",
     lesson: "위성은 멀리 돌아가며 거리와 날씨, 안테나 각도의 영향을 받는다.",
     events: [
       E("attenuation", "궤도 선택", "가장 짧은 위성 경로는 어디일까?", [O("저궤도", "가까운 궤도로 감쇠를 줄였다", -6), O("정지궤도", "아주 먼 거리에서 신호가 약해졌다", -16), O("반대 궤도", "긴 우회로 조각이 줄었다", -12)]),
@@ -86,8 +91,9 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 4.8, color: "#86bb59", accent: "#efff9c",
-    story: "마지막에는 저장된 파일이 아니라 계속 커지는 실시간 스트리밍이 되었다. 픽셀은 끊김 없는 연결을 지키며 친구의 폰으로 달린다.",
+    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 4.8, color: "#f1ffdf", accent: "#6c9f00",
+    story: "마지막 임무는 친구와 실시간 생일 영상 통화를 연결하는 일이다. 저장 파일과 달리 데이터가 계속 생기므로 끊김 없는 전송이 중요하다.",
+    friendReply: "화면도 소리도 잘 들려! 이제 우리 실시간으로 함께 축하하자.",
     lesson: "마지막 연결과 재전송이 친구가 받는 영상의 완성도를 결정한다.",
     events: [
       E("gate", "마지막 기지국", "친구 집까지 안정적인 연결은?", [O("혼잡 Wi-Fi", "접속자가 몰려 조각이 빠졌다", -10), O("5G 기지국", "가까운 기지국이 빠르게 연결했다", 10), O("약한 LTE", "신호가 약해 일부가 사라졌다", -6)]),
@@ -100,15 +106,15 @@ const stages: Stage[] = [
 ];
 
 const stageEndings = [
-  { code: "TEXT SENT", title: "문자가 길을 열었다", line: "4 KB의 짧은 문장이 벽과 간섭을 뚫고 이미지가 달릴 더 넓은 길을 열었다." },
-  { code: "IMAGE SENT", title: "사진이 도시를 건넜다", line: "5 MB 이미지가 혼잡한 교환기를 통과하며 데이터의 무게가 눈에 보이기 시작했다." },
-  { code: "AUDIO SENT", title: "목소리가 복구됐다", line: "25 MB 음성 조각은 서버 사본을 만나 끊어진 친구의 목소리를 다시 이어 붙였다." },
-  { code: "VIDEO SENT", title: "동영상이 바다를 건넜다", line: "180 MB 동영상은 1만 km 해저 케이블과 증폭기를 지나 더 큰 데이터가 되었다." },
-  { code: "DATA SENT", title: "1.2 GB를 궤도에 올렸다", line: "대용량 데이터가 폭우와 긴 거리를 견디고 마지막 실시간 연결을 향해 내려왔다." },
-  { code: "STREAM LIVE", title: "마음이 실시간으로 닿았다", line: "계속 커지는 스트리밍이 끊기지 않고 재생되며 긴 여정은 살아 있는 영상이 되었다." },
+  { code: "TEXT RECEIVED", title: "친구가 문자를 받았다!", line: "4 KB 문자가 벽과 전파 간섭을 지나 친구의 알림창에 도착했다. 첫 번째 전송 성공이다." },
+  { code: "IMAGE RECEIVED", title: "친구가 사진을 열었다!", line: "5 MB 이미지가 혼잡한 도시 회선을 통과해 친구 화면에 선명하게 나타났다." },
+  { code: "AUDIO RECEIVED", title: "친구가 목소리를 들었다!", line: "25 MB 음성은 서버 사본으로 빠진 조각을 복구한 뒤 친구의 스피커에서 재생됐다." },
+  { code: "VIDEO RECEIVED", title: "친구가 영상 편지를 봤다!", line: "180 MB 동영상이 해저 케이블과 증폭기를 지나 친구의 화면에서 끝까지 재생됐다." },
+  { code: "FILE RECEIVED", title: "친구가 추억 파일을 받았다!", line: "1.2 GB 대용량 파일이 먼 위성 경로와 날씨 간섭을 견디고 안전하게 저장됐다." },
+  { code: "STREAM CONNECTED", title: "친구와 실시간으로 연결됐다!", line: "계속 만들어지는 영상과 음성이 끊기지 않고 도착해 두 친구가 같은 순간을 나눴다." },
 ];
 
-const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세계까지 어떤 경로로 달릴까?", [
+const routeChallenge: Challenge = E("route", "마지막 갈림길", "친구의 폰까지 어떤 경로로 보낼까?", [
   O("빠른 길", "거리는 짧지만 다음 장애물이 빨라진다", -3, "fast"),
   O("균형 경로", "거리와 위험을 균형 있게 선택했다", -5, "balanced"),
   O("안전한 길", "멀리 돌아가지만 다음 장애물 피해가 줄어든다", -8, "safe"),
@@ -139,18 +145,16 @@ function buildJourneyNovel(decisions: DecisionRecord[], stats: StageStat[], frag
     const choices = decisions.filter((item) => item.stage === world.name && !item.route);
     const turningPoint = choices.reduce<DecisionRecord | null>((picked, item) => !picked || Math.abs(item.delta) > Math.abs(picked.delta) ? item : picked, null);
     const stat = stats[index];
-    const result = stat ? stat.end < stat.start ? `${stat.start}개의 빛은 ${stat.end}개로 줄었지만` : `${stat.start}개의 빛은 ${stat.end}개로 더 선명해졌고` : "빛은 멈추지 않았고";
+    const result = stat ? `새로 출발한 100개의 ${world.payload} 조각 가운데 ${stat.end}개가 친구에게 도착했다` : "전송 기록은 아직 완성되지 않았다";
     const moment = turningPoint ? `‘${turningPoint.choice}’을 향해 몸을 던진 순간, ${turningPoint.detail}.` : `${world.place}의 길은 조용히 뒤로 흘러갔다.`;
-    return `${index + 1}장. ${world.name}. ${world.story} 픽셀은 ${moment} ${result}, 작은 발은 다음 세계를 향해 다시 뛰었다.`;
+    return `${index + 1}번째 전송. 친구에게 ${world.payload} 보내기. ${world.story} 픽셀은 ${moment} 마침내 ${result}. 친구는 “${world.friendReply}”라고 답했다.`;
   });
+  const received = stats.filter((item) => item.end > 0).length;
+  const average = stats.length ? Math.round(stats.reduce((sum, item) => sum + item.end, 0) / stats.length) : fragments;
   const ending = fragments === 0
-    ? `그러나 ${traveledWorlds.at(-1)?.name ?? "전송로"}에서 마지막 데이터 조각까지 사라졌다. 화면에는 아무것도 재생되지 않았다. 픽셀은 멈춘 길을 기억했다. 다음 전송에서는 더 안전한 경로를 골라야 한다.`
-    : fragments >= 75
-    ? `마침내 하람의 화면에 영상이 켜졌다. ${fragments}개의 조각이 웃음과 목소리를 이어 붙였다. 픽셀은 화면 가장자리에서 조용히 손을 흔들었다. 멀리 있다는 것은, 연결될 수 없다는 뜻이 아니었다.`
-    : fragments >= 25
-      ? `하람의 화면에는 ${fragments}개의 조각이 별처럼 흩어져 나타났다. 완벽한 영상은 아니었지만, 그 사이로 친구의 마음은 분명히 보였다. 하람은 사라진 문장을 상상하며 답장을 쓰기 시작했다.`
-      : `화면에는 세 점과 희미한 빛만 남았다. 그래도 픽셀은 포기하지 않았다. 실패는 길이 사라진 것이 아니라, 다음 전송에서 다른 길을 고를 수 있다는 표시였으니까.`;
-  return [...chapters, `마지막 장. 친구의 화면. ${ending}`];
+    ? `마지막 임무에서는 데이터가 0이 되어 연결이 끊겼다. 하지만 앞서 도착한 메시지들은 사라지지 않았다. 픽셀은 실패한 경로를 기록하고 다시 출발할 준비를 했다.`
+    : `여섯 번의 전송이 끝났다. 서로 다른 크기의 데이터는 매번 새롭게 출발했고, 평균 ${average}개의 조각이 도착했다. 픽셀은 ${received}개의 임무 기록을 바라보며 말했다. “데이터가 커져도, 조건을 살피면 마음은 도착할 수 있어.”`;
+  return [...chapters, `마지막 장. 여섯 번의 전송. ${ending}`];
 }
 
 function labelTexture(text: string, accent: string) {
@@ -910,7 +914,7 @@ export default function Home() {
       setOutcome({ delta: applied, points: earnedPoints, combo: comboRef.current, text: `${option.label} · ${option.detail}` });
       engineRef.current?.triggerEffect(1, stage.accent);
       setGameEffect("boost"); window.setTimeout(() => setGameEffect(""), 360);
-      setRadio(`픽셀: “${option.label}로 갈게! 멈추지 말고 다음 세계로!”`);
+      setRadio(`픽셀: “${option.label}로 친구의 폰까지 마무리할게!”`);
       if (nextFragments === 0) { terminateAtZero(); return; }
       nextTimerRef.current = window.setTimeout(() => {
         setOutcome(null);
@@ -964,7 +968,7 @@ export default function Home() {
       } else {
         if (stageIndex < stages.length - 1) {
           setIsRoute(true);
-          setRadio("루미: “스테이지 마지막 갈림길이야. 지금 남은 조각을 보고 달리면서 골라!”");
+          setRadio("루미: “친구 폰 앞 마지막 갈림길이야. 남은 조각을 보고 경로를 골라!”");
         } else {
           const completed = finishStage(nextFragments);
           const ending = stageEndings[stageIndex];
@@ -998,10 +1002,21 @@ export default function Home() {
       return;
     }
     const nextStage = stageIndex + 1;
-    stageStartRef.current = fragmentsRef.current;
+    fragmentsRef.current = 100;
+    stageStartRef.current = 100;
     stageLostRef.current = 0;
     stageRecoveredRef.current = 0;
     stageScoreStartRef.current = scoreRef.current;
+    routeRef.current = "balanced";
+    comboRef.current = 0;
+    boostRef.current = 0;
+    boostActiveRef.current = false;
+    setFragments(100);
+    setRoute("balanced");
+    setCombo(0);
+    setBoostCharge(0);
+    setBoostActive(false);
+    engineRef.current?.setBoost(false);
     setStageIndex(nextStage);
     setEventIndex(0);
     setIsRoute(false);
@@ -1012,14 +1027,15 @@ export default function Home() {
     window.setTimeout(() => setChapterFlash(false), 650);
   };
 
+  const averageArrival = useMemo(() => stats.length ? Math.round(stats.reduce((sum, item) => sum + item.end, 0) / stats.length) : fragments, [fragments, stats]);
   const grade = useMemo(() => {
-    if (fragments >= 95) return { icon: "완벽", title: "마음이 온전히 도착했다", story: "영상이 끝까지 재생되자 하람은 웃다가 눈물을 닦았다. 픽셀은 마지막 조각 위에서 조용히 빛났다." };
-    if (fragments >= 75) return { icon: "성공", title: "마음은 충분히 전해졌다", story: "영상은 한 번 끊겼지만 하람은 마지막 인사를 알아들었다. ‘멀리 있어도 우리는 연결되어 있어.’" };
-    if (fragments >= 50) return { icon: "절반", title: "절반의 편지가 도착했다", story: "화면은 군데군데 깨졌지만 목소리는 남았다. 하람은 사라진 장면을 마음속으로 이어 붙였다." };
-    if (fragments >= 25) return { icon: "조각", title: "몇 장면만 도착했다", story: "사진 몇 장과 웃음소리만 남았다. 하람이 메시지를 보냈다. ‘뒤에 뭐라고 했어?’" };
-    if (fragments === 0) return { icon: "0", title: "전송이 완전히 끊겼다", story: "마지막 데이터 조각까지 사라지는 순간 게임이 종료됐다. 지나온 기록을 확인하고 더 안전한 경로로 다시 도전해 보자." };
-    return { icon: "…", title: "세 점만 도착했다", story: "영상은 열리지 않았다. 하지만 픽셀은 사라지지 않았다. 다시 전송 버튼을 기다리며 작은 불빛으로 남았다." };
-  }, [fragments]);
+    if (averageArrival >= 95) return { icon: "완벽", title: "여섯 마음이 온전히 도착했다", story: "문자부터 실시간 영상까지 모든 임무에서 거의 모든 조각을 지켰다. 친구의 화면에는 여섯 번의 축하가 선명하게 남았다." };
+    if (averageArrival >= 75) return { icon: "성공", title: "마음은 충분히 전해졌다", story: "몇 번 끊긴 순간은 있었지만 친구는 여섯 전송의 뜻을 모두 알아들었다. ‘멀리 있어도 우리는 연결되어 있어.’" };
+    if (averageArrival >= 50) return { icon: "절반", title: "절반 이상의 전송이 도착했다", story: "일부 데이터는 깨졌지만 문자와 사진, 목소리와 영상 속 마음은 친구에게 분명히 전해졌다." };
+    if (averageArrival >= 25) return { icon: "조각", title: "몇몇 장면이 도착했다", story: "여섯 전송 중 많은 조각이 사라졌지만 친구는 도착한 흔적을 보고 다시 보내 달라고 답했다." };
+    if (averageArrival === 0) return { icon: "0", title: "전송이 완전히 끊겼다", story: "마지막 데이터 조각까지 사라지는 순간 게임이 종료됐다. 지나온 기록을 확인하고 더 안전한 경로로 다시 도전해 보자." };
+    return { icon: "…", title: "희미한 신호만 도착했다", story: "도착한 조각은 적었지만 픽셀은 실패한 길을 기록했다. 다음 전송에서는 다른 선택을 할 수 있다." };
+  }, [averageArrival]);
 
   const worstStage = stats.length ? stats.reduce((a, b) => a.lost > b.lost ? a : b) : null;
   const novel = useMemo(() => buildJourneyNovel(decisions, stats, fragments), [decisions, fragments, stats]);
@@ -1044,7 +1060,7 @@ export default function Home() {
     }
     try {
       setSubmitState("saving"); setSubmitMessage("");
-      const response = await fetch("/api/leaderboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ playerName: cleaned, score, fragments, grade: grade.title }) });
+      const response = await fetch("/api/leaderboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ playerName: cleaned, score, fragments: averageArrival, grade: grade.title }) });
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "등록하지 못했습니다.");
       setSubmitState("saved"); setSubmitMessage("명예의 전당에 기록했습니다!");
@@ -1060,7 +1076,7 @@ export default function Home() {
       onPointerUp={(event) => { if (screen !== "playing" || stageReview || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
 
       {screen === "intro" && <section className="story-intro">
-        <header className="story-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
+        <header className="story-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
         <div className="intro-story-copy">
           <div className="fight-title" aria-label="시그널 러시, 픽셀 대 전파 방해">
             <div className="title-burst" aria-hidden="true"><i /><i /><i /><i /><i /></div>
@@ -1068,21 +1084,21 @@ export default function Home() {
             <h1><span>SIGNAL</span><i>×</i><em>RUSH</em></h1>
             <strong>시그널 러시</strong>
           </div>
-          <p className="mission-tag">MISSION · 커지는 데이터의 조각 100개를 지켜라</p>
-          <p>문자에서 이미지·음성·동영상·대용량 데이터·실시간 스트리밍까지. 데이터가 커질수록 코스도 길어집니다. 남은 조각이 0이 되면 전송은 즉시 끝납니다.</p>
+          <p className="mission-tag">MISSION · 여섯 번의 전송을 모두 성공시켜라</p>
+          <p>먼 곳의 친구에게 먼저 문자를 보냅니다. 친구가 잘 받으면 첫 스테이지를 클리어하고, 다음에는 사진을 새로 보냅니다. 매 스테이지는 데이터 조각 100개로 다시 시작하며 데이터가 커질수록 코스가 길고 빨라집니다.</p>
           <button className="battle-start" onClick={startGame}><b>전송 배틀 시작</b><span>RUSH →</span></button>
           <small>방향키·A/D·스와이프로 이동 · 스페이스바로 충전된 부스트 사용</small>
         </div>
-        <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/packet-squad.png" alt="귀여운 전송 요정 픽셀과 데이터 조각 친구들" /><div className="pixel-speech"><b>픽셀</b><span>“마지막 장면까지 내가 지킬게!”</span></div></div>
-        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>{item.payload}</b><small>{item.payloadSize} · {item.name}</small></div>)}</div>
-        <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 도착 조각 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
+        <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/hero-pixel.png" alt="메시지 봉투를 들고 달리는 귀여운 전송 요정 픽셀" /><div className="pixel-speech"><b>픽셀</b><span>“한 번에 하나씩, 친구에게 꼭 전할게!”</span></div></div>
+        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>{item.payloadSize} · 새 데이터 100조각</small></div>)}</div>
+        <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 평균 도착률 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
       {screen === "playing" && <section className={`live-runner energy-${stageIndex + 1} route-${route} ${gameEffect} ${boostActive ? "overdrive" : ""}`}>
         <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
         <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
         <header className="live-topbar">
-          <div className="live-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
+          <div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>{stage.name} · {stage.place} · {stage.distance}</span></div>
           <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
         </header>
@@ -1094,23 +1110,23 @@ export default function Home() {
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1} ${stageEnding.code === "SIGNAL LOST" ? "ending-fail" : ""}`}><div className="ending-energy"><i /><i /><i /></div><small>{stageEnding.code === "SIGNAL LOST" ? "TRANSMISSION TERMINATED" : `CHAPTER ${String(stageIndex + 1).padStart(2, "0")} CLEAR`} · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}
-        {stageReview && <div className={`stage-review review-stage-${stageIndex + 1}`} role="dialog" aria-modal="true" aria-labelledby="stage-review-title"><article><div className="review-kicker"><span>STAGE {String(stageIndex + 1).padStart(2, "0")} CLEAR</span><b>{stage.payload} · {stage.payloadSize}</b></div><h1 id="stage-review-title">{stageReview.title}</h1><p className="stage-story">{stageReview.story} {stageReview.line}</p><div className="stage-score-grid"><div><span>스테이지 점수</span><strong>+{stageReview.stageScore.toLocaleString()}</strong></div><div><span>누적 점수</span><strong>{stageReview.totalScore.toLocaleString()}</strong></div><div><span>데이터 조각</span><strong>{stageReview.startFragments} → {stageReview.endFragments}</strong></div></div><div className="stage-balance"><span>잃은 조각 <b>−{stageReview.lost}</b></span><span>되찾은 조각 <b>+{stageReview.recovered}</b></span><span>선택한 경로 <b>{routeName(route)}</b></span></div><button onClick={continueStage}><span>{stageIndex < stages.length - 1 ? `다음 스테이지 · ${stages[stageIndex + 1].payload} ${stages[stageIndex + 1].payloadSize}` : "최종 전송 결과 보기"}</span><b>→</b></button><small>점수와 이야기를 확인한 뒤에만 다음 스테이지로 진행합니다.</small></article></div>}
+        {stageReview && <div className={`stage-review review-stage-${stageIndex + 1}`} role="dialog" aria-modal="true" aria-labelledby="stage-review-title"><article><div className="review-kicker"><span>STAGE {String(stageIndex + 1).padStart(2, "0")} CLEAR</span><b>{stage.payload} · {stage.payloadSize}</b></div><h1 id="stage-review-title">{stageReview.title}</h1><div className="stage-narrative"><div className="story-illustration"><img src="/game/stage-storyboard.png" alt={`친구가 ${stage.payload} 데이터를 받는 장면`} style={{ "--stage-col": stageIndex % 3, "--stage-row": Math.floor(stageIndex / 3) } as React.CSSProperties} /></div><div><p className="stage-story">{stageReview.story} {stageReview.line}</p><blockquote><small>친구의 답장</small>“{stage.friendReply}”</blockquote></div></div><div className="stage-score-grid"><div><span>스테이지 점수</span><strong>+{stageReview.stageScore.toLocaleString()}</strong></div><div><span>누적 점수</span><strong>{stageReview.totalScore.toLocaleString()}</strong></div><div><span>도착한 데이터</span><strong>{stageReview.endFragments}<small>/100</small></strong></div></div><div className="stage-balance"><span>잃은 조각 <b>−{stageReview.lost}</b></span><span>되찾은 조각 <b>+{stageReview.recovered}</b></span><span>선택한 경로 <b>{routeName(route)}</b></span></div><button onClick={continueStage}><span>{stageIndex < stages.length - 1 ? `새 전송 시작 · 친구에게 ${stages[stageIndex + 1].payload} 보내기` : "최종 전송 결과 보기"}</span><b>→</b></button><small>다음 스테이지는 새로운 데이터 조각 100개로 시작합니다.</small></article></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><button className={`boost-button ${boostCharge >= 100 ? "ready" : ""}`} onClick={activateBoost} disabled={boostCharge < 100 || boostActive} style={{ "--boost": `${boostCharge * 3.6}deg` } as React.CSSProperties} aria-label={`부스트 ${boostCharge}%`}><b>{boostActive ? "ON" : `${boostCharge}%`}</b><small>{boostActive ? "OVERDRIVE" : boostCharge >= 100 ? "BOOST!" : "충전"}</small></button><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
       </section>}
 
       {screen === "result" && <section className="result-review">
-        <header className="review-top"><div className="live-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
+        <header className="review-top"><div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
 
         {resultStep === 0 && <article className="score-review">
           <div className="score-hero"><span className="ending-mark">{grade.icon}</span><small>FINAL RUN SCORE</small><strong>{score.toLocaleString()}</strong><em>점</em><h1>{grade.title}</h1><p>{grade.story}</p><button onClick={() => setResultStep(1)}>다음 · 나의 이야기 읽기 <span>→</span></button></div>
-          <div className="score-report"><div className="friend-screen"><div className="friend-face">H</div><strong>{fragments < 25 ? "…" : "생일 축하해, 하람!"}</strong><span>{fragments >= 50 ? "멀리 있어도 우리는 연결되어 있어." : "사라진 장면을 복구하는 중…"}</span><i style={{ width: `${fragments}%` }} /></div><div className="score-numbers"><div><span>도착한 조각</span><b>{fragments}<small>/100</small></b></div><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div><h2>여섯 세계 전송 기록</h2><div className="ending-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span>{index + 1}</span><b>{item.name}</b><i><em style={{ width: `${item.end}%` }} /></i><small>{item.start} → {item.end}</small></div>)}</div></div>
+          <div className="score-report"><div className="friend-screen"><div className="friend-face">H</div><strong>{averageArrival < 25 ? "다시 보내 줄래?" : "여섯 번의 축하, 잘 받았어!"}</strong><span>{averageArrival >= 50 ? "문자부터 영상 통화까지 모두 고마워." : "도착한 조각을 확인하고 있어."}</span><i style={{ width: `${averageArrival}%` }} /></div><div className="score-numbers"><div><span>평균 도착률</span><b>{averageArrival}<small>/100</small></b></div><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div><h2>여섯 전송 임무 기록</h2><div className="ending-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span>{index + 1}</span><b>{stages[index].payload}</b><i><em style={{ width: `${item.end}%` }} /></i><small>100 → {item.end}</small></div>)}</div></div>
         </article>}
 
-        {resultStep === 1 && <article className="novel-review"><div className="novel-cover"><span>YOUR SIGNAL NOVEL</span><h1>픽셀과<br />여섯 개의 세계</h1><p>내가 고른 길로 완성된 단 하나의 전송 이야기</p><strong>{playerName || "이름 없는 전송자"}</strong></div><div className="novel-pages"><header><small>도착률 {fragments}% · {score.toLocaleString()}점</small><h2>지구 반대편으로 보낸 마음</h2></header>{novel.map((paragraph, index) => <p key={index} className={index === novel.length - 1 ? "novel-ending" : ""}>{paragraph}</p>)}<button onClick={() => setResultStep(2)}>다음 · 선택 피드백 보기 <span>→</span></button></div></article>}
+        {resultStep === 1 && <article className="novel-review"><div className="novel-cover"><span>YOUR SIGNAL NOVEL</span><h1>픽셀과<br />여섯 번의 전송</h1><p>내가 고른 길로 완성된 문자·사진·음성·영상의 이야기</p><strong>{playerName || "이름 없는 전송자"}</strong></div><div className="novel-pages"><header><small>평균 도착률 {averageArrival}% · {score.toLocaleString()}점</small><h2>지구 반대편으로 여섯 번 보낸 마음</h2></header>{novel.map((paragraph, index) => <p key={index} className={index === novel.length - 1 ? "novel-ending" : ""}>{paragraph}</p>)}<button onClick={() => setResultStep(2)}>다음 · 선택 피드백 보기 <span>→</span></button></div></article>}
 
-        {resultStep === 2 && <article className="feedback-review"><div className="feedback-copy"><span>MISSION DEBRIEF</span><h1>다음 전송은<br /><em>더 멀리 갑니다.</em></h1><p>정답을 외우는 대신, 이번에 고른 조건과 결과를 연결해 보세요.</p><div className="feedback-grid">{feedback.map((item, index) => <div key={item.label}><span>{String(index + 1).padStart(2, "0")} · {item.label}</span><h2>{item.title}</h2><p>{item.text}</p></div>)}</div></div><aside className="final-actions"><div className="rank-card"><small>FINAL RECORD</small><strong>{score.toLocaleString()}<em>점</em></strong><span>{fragments}% 도착 · {grade.icon}</span></div><div className="honor-submit"><h2>명예의 전당에 기록하기</h2><p>수업에서 알아볼 수 있는 이름이나 별명을 입력하세요.</p><div><input value={playerName} onChange={(event) => setPlayerName(event.target.value.slice(0, 12))} placeholder="이름 또는 별명" aria-label="명예의 전당 이름" disabled={submitState === "saved"} /><button onClick={submitScore} disabled={submitState === "saving" || submitState === "saved"}>{submitState === "saving" ? "기록 중…" : submitState === "saved" ? "기록 완료" : "등록"}</button></div>{submitMessage && <small className={submitState}>{submitMessage}</small>}</div><div className="final-leaderboard"><h2>명예의 전당 TOP 5</h2>{leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id} className={entry.player_name === playerName.trim() && entry.score === score ? "mine" : ""}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}</strong><small>{entry.fragments}%</small></div>) : <p>아직 등록된 기록이 없습니다.</p>}</div><button className="retry-button" onClick={startGame}>점수·이야기·피드백 확인 완료<br /><b>픽셀과 다시 달리기 ↻</b></button></aside></article>}
+        {resultStep === 2 && <article className="feedback-review"><div className="feedback-copy"><span>MISSION DEBRIEF</span><h1>다음 전송은<br /><em>더 멀리 갑니다.</em></h1><p>정답을 외우는 대신, 이번에 고른 조건과 결과를 연결해 보세요.</p><div className="feedback-grid">{feedback.map((item, index) => <div key={item.label}><span>{String(index + 1).padStart(2, "0")} · {item.label}</span><h2>{item.title}</h2><p>{item.text}</p></div>)}</div></div><aside className="final-actions"><div className="rank-card"><small>FINAL RECORD</small><strong>{score.toLocaleString()}<em>점</em></strong><span>평균 {averageArrival}% 도착 · {grade.icon}</span></div><div className="honor-submit"><h2>명예의 전당에 기록하기</h2><p>수업에서 알아볼 수 있는 이름이나 별명을 입력하세요.</p><div><input value={playerName} onChange={(event) => setPlayerName(event.target.value.slice(0, 12))} placeholder="이름 또는 별명" aria-label="명예의 전당 이름" disabled={submitState === "saved"} /><button onClick={submitScore} disabled={submitState === "saving" || submitState === "saved"}>{submitState === "saving" ? "기록 중…" : submitState === "saved" ? "기록 완료" : "등록"}</button></div>{submitMessage && <small className={submitState}>{submitMessage}</small>}</div><div className="final-leaderboard"><h2>명예의 전당 TOP 5</h2>{leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id} className={entry.player_name === playerName.trim() && entry.score === score ? "mine" : ""}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}</strong><small>{entry.fragments}%</small></div>) : <p>아직 등록된 기록이 없습니다.</p>}</div><button className="retry-button" onClick={startGame}>점수·이야기·피드백 확인 완료<br /><b>픽셀과 다시 달리기 ↻</b></button></aside></article>}
       </section>}
     </main>
   );

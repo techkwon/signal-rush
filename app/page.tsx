@@ -15,6 +15,7 @@ type StageStat = { name: string; start: number; end: number; lost: number; recov
 type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
 type LeaderEntry = { id: number; player_name: string; score: number; fragments: number; grade: string; created_at: string };
 type StageEnding = { world: string; code: string; title: string; line: string; lost: number; recovered: number; endFragments: number };
+type StageReview = StageEnding & { stageScore: number; totalScore: number; startFragments: number; story: string };
 type ArcadeKind = "orb" | "hazard" | "dodge";
 
 type Engine = {
@@ -23,6 +24,7 @@ type Engine = {
   setLane: (lane: Lane) => void;
   setEnergy: (level: number, route: RouteMode) => void;
   setBoost: (active: boolean) => void;
+  setPaused: (active: boolean) => void;
   triggerEffect: (delta: number, accent: string) => void;
   destroy: () => void;
 };
@@ -317,6 +319,7 @@ export default function Home() {
   const stageStartRef = useRef(100);
   const stageLostRef = useRef(0);
   const stageRecoveredRef = useRef(0);
+  const stageScoreStartRef = useRef(0);
   const statsRef = useRef<StageStat[]>([]);
   const decisionsRef = useRef<DecisionRecord[]>([]);
   const nextTimerRef = useRef<number | null>(null);
@@ -328,6 +331,7 @@ export default function Home() {
   const arcadeResolveRef = useRef<(kind: ArcadeKind) => void>(() => {});
   const arcadeToastTimerRef = useRef<number | null>(null);
   const terminatingRef = useRef(false);
+  const reviewingRef = useRef(false);
 
   const [screen, setScreen] = useState<Screen>("intro");
   const [stageIndex, setStageIndex] = useState(0);
@@ -341,6 +345,7 @@ export default function Home() {
   const [outcome, setOutcome] = useState<{ delta: number; points: number; combo: number; text: string } | null>(null);
   const [chapterFlash, setChapterFlash] = useState(false);
   const [stageEnding, setStageEnding] = useState<StageEnding | null>(null);
+  const [stageReview, setStageReview] = useState<StageReview | null>(null);
   const [combo, setCombo] = useState(0);
   const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit" | "dash">("");
   const [boostCharge, setBoostCharge] = useState(0);
@@ -390,7 +395,7 @@ export default function Home() {
   const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
 
   const terminateAtZero = useCallback(() => {
-    if (terminatingRef.current) return;
+    if (terminatingRef.current || reviewingRef.current) return;
     terminatingRef.current = true;
     resolvingRef.current = true;
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
@@ -415,7 +420,7 @@ export default function Home() {
   }, []);
 
   const activateBoost = useCallback(() => {
-    if (screen !== "playing" || terminatingRef.current || boostActiveRef.current || boostRef.current < 100) return;
+    if (screen !== "playing" || terminatingRef.current || reviewingRef.current || boostActiveRef.current || boostRef.current < 100) return;
     boostRef.current = 0; boostActiveRef.current = true;
     setBoostCharge(0); setBoostActive(true); setGameEffect("boost");
     engineRef.current?.setBoost(true); engineRef.current?.triggerEffect(1, stage.accent);
@@ -574,6 +579,7 @@ export default function Home() {
     let arcadePattern = 0;
     let energyLevel = 1;
     let builtWorldLevel = 0;
+    let paused = false;
     let challengeStartZ = -54;
     let courseSeconds = stages[0].courseSeconds;
     const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
@@ -738,6 +744,7 @@ export default function Home() {
         targetFov = Math.min(82, baseFov + (active ? 7 : 0));
         speedLineMaterial.opacity = active ? .95 : Math.min(.72, .12 + (stageIndex + 1) * .085 + (routeRef.current === "fast" ? .2 : 0));
       },
+      setPaused(active) { paused = active; },
       triggerEffect(delta, accent) {
         impactShake = delta < 0 ? .6 : .18;
         const color = delta < 0 ? "#ff4568" : accent;
@@ -765,6 +772,7 @@ export default function Home() {
     const animate = () => {
       animationId = requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), .05);
+      if (paused) { renderer.render(scene, camera); return; }
       elapsed += dt;
       const travel = challengeSpeed * speedMultiplier * dt;
       const worldTravel = worldSpeed * speedMultiplier * 1.8 * dt;
@@ -908,14 +916,10 @@ export default function Home() {
         setOutcome(null);
         const completed = finishStage(nextFragments);
         const ending = stageEndings[stageIndex];
-        setStageEnding({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments });
-        setRadio(`픽셀: “${ending.title}. 다음 세계로 연결한다!”`);
-        nextTimerRef.current = window.setTimeout(() => {
-          const nextStage = stageIndex + 1;
-          stageStartRef.current = fragmentsRef.current; stageLostRef.current = 0; stageRecoveredRef.current = 0;
-          setStageEnding(null); setStageIndex(nextStage); setEventIndex(0); setIsRoute(false); setChapterFlash(true); setRadio(stages[nextStage].story);
-          window.setTimeout(() => setChapterFlash(false), 650);
-        }, 900);
+        reviewingRef.current = true;
+        engineRef.current?.setPaused(true);
+        setStageReview({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments, startFragments: completed.start, stageScore: scoreRef.current - stageScoreStartRef.current, totalScore: scoreRef.current, story: stage.story });
+        setRadio(`픽셀: “${ending.title}. 기록을 확인하면 다음 데이터로 갈 수 있어!”`);
       }, 420);
       return;
     }
@@ -964,9 +968,10 @@ export default function Home() {
         } else {
           const completed = finishStage(nextFragments);
           const ending = stageEndings[stageIndex];
-          setStageEnding({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments });
-          setRadio(`픽셀: “${ending.title}!”`);
-          nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 900);
+          reviewingRef.current = true;
+          engineRef.current?.setPaused(true);
+          setStageReview({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments, startFragments: completed.start, stageScore: scoreRef.current - stageScoreStartRef.current, totalScore: scoreRef.current, story: stage.story });
+          setRadio(`픽셀: “${ending.title}. 마지막 기록을 확인해 줘!”`);
         }
       }
     }, 280);
@@ -977,9 +982,33 @@ export default function Home() {
   const startGame = () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
-    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced"; terminatingRef.current = false;
+    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
+    stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
-    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    window.setTimeout(() => setChapterFlash(false), 650);
+  };
+
+  const continueStage = () => {
+    if (!stageReview) return;
+    setStageReview(null);
+    reviewingRef.current = false;
+    if (stageIndex === stages.length - 1) {
+      setScreen("result");
+      return;
+    }
+    const nextStage = stageIndex + 1;
+    stageStartRef.current = fragmentsRef.current;
+    stageLostRef.current = 0;
+    stageRecoveredRef.current = 0;
+    stageScoreStartRef.current = scoreRef.current;
+    setStageIndex(nextStage);
+    setEventIndex(0);
+    setIsRoute(false);
+    setProgress(0);
+    setChapterFlash(true);
+    setRadio(stages[nextStage].story);
+    engineRef.current?.setPaused(false);
     window.setTimeout(() => setChapterFlash(false), 650);
   };
 
@@ -1027,11 +1056,11 @@ export default function Home() {
 
   return (
     <main className={`signal-game ${motionReduced ? "reduced" : ""}`} style={{ "--accent": stage.accent, "--world": stage.color } as React.CSSProperties}
-      onPointerDown={(event) => { if (screen === "playing") pointerStartRef.current = event.clientX; }}
-      onPointerUp={(event) => { if (screen !== "playing" || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
+      onPointerDown={(event) => { if (screen === "playing" && !stageReview) pointerStartRef.current = event.clientX; }}
+      onPointerUp={(event) => { if (screen !== "playing" || stageReview || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
 
       {screen === "intro" && <section className="story-intro">
-        <header className="story-brand"><span>SR</span><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
+        <header className="story-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
         <div className="intro-story-copy">
           <div className="fight-title" aria-label="시그널 러시, 픽셀 대 전파 방해">
             <div className="title-burst" aria-hidden="true"><i /><i /><i /><i /><i /></div>
@@ -1053,7 +1082,7 @@ export default function Home() {
         <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
         <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
         <header className="live-topbar">
-          <div className="live-brand"><span>SR</span><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
+          <div className="live-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>{stage.name} · {stage.place} · {stage.distance}</span></div>
           <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
         </header>
@@ -1065,13 +1094,14 @@ export default function Home() {
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1} ${stageEnding.code === "SIGNAL LOST" ? "ending-fail" : ""}`}><div className="ending-energy"><i /><i /><i /></div><small>{stageEnding.code === "SIGNAL LOST" ? "TRANSMISSION TERMINATED" : `CHAPTER ${String(stageIndex + 1).padStart(2, "0")} CLEAR`} · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}
+        {stageReview && <div className={`stage-review review-stage-${stageIndex + 1}`} role="dialog" aria-modal="true" aria-labelledby="stage-review-title"><article><div className="review-kicker"><span>STAGE {String(stageIndex + 1).padStart(2, "0")} CLEAR</span><b>{stage.payload} · {stage.payloadSize}</b></div><h1 id="stage-review-title">{stageReview.title}</h1><p className="stage-story">{stageReview.story} {stageReview.line}</p><div className="stage-score-grid"><div><span>스테이지 점수</span><strong>+{stageReview.stageScore.toLocaleString()}</strong></div><div><span>누적 점수</span><strong>{stageReview.totalScore.toLocaleString()}</strong></div><div><span>데이터 조각</span><strong>{stageReview.startFragments} → {stageReview.endFragments}</strong></div></div><div className="stage-balance"><span>잃은 조각 <b>−{stageReview.lost}</b></span><span>되찾은 조각 <b>+{stageReview.recovered}</b></span><span>선택한 경로 <b>{routeName(route)}</b></span></div><button onClick={continueStage}><span>{stageIndex < stages.length - 1 ? `다음 스테이지 · ${stages[stageIndex + 1].payload} ${stages[stageIndex + 1].payloadSize}` : "최종 전송 결과 보기"}</span><b>→</b></button><small>점수와 이야기를 확인한 뒤에만 다음 스테이지로 진행합니다.</small></article></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><button className={`boost-button ${boostCharge >= 100 ? "ready" : ""}`} onClick={activateBoost} disabled={boostCharge < 100 || boostActive} style={{ "--boost": `${boostCharge * 3.6}deg` } as React.CSSProperties} aria-label={`부스트 ${boostCharge}%`}><b>{boostActive ? "ON" : `${boostCharge}%`}</b><small>{boostActive ? "OVERDRIVE" : boostCharge >= 100 ? "BOOST!" : "충전"}</small></button><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
       </section>}
 
       {screen === "result" && <section className="result-review">
-        <header className="review-top"><div className="live-brand"><span>SR</span><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
+        <header className="review-top"><div className="live-brand"><img className="brand-icon" src="/favicon.svg" alt="" /><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
 
         {resultStep === 0 && <article className="score-review">
           <div className="score-hero"><span className="ending-mark">{grade.icon}</span><small>FINAL RUN SCORE</small><strong>{score.toLocaleString()}</strong><em>점</em><h1>{grade.title}</h1><p>{grade.story}</p><button onClick={() => setResultStep(1)}>다음 · 나의 이야기 읽기 <span>→</span></button></div>

@@ -522,6 +522,7 @@ export default function Home() {
   const reviewingRef = useRef(false);
 
   const [screen, setScreen] = useState<Screen>("intro");
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [stageIndex, setStageIndex] = useState(0);
   const [eventIndex, setEventIndex] = useState(0);
   const [isRoute, setIsRoute] = useState(false);
@@ -589,14 +590,31 @@ export default function Home() {
     if (!audio) return;
     audio.master.gain.setTargetAtTime(active ? .62 : .0001, audio.ctx.currentTime, .02);
     if (!active) stopGameMusic(audio);
-    else if (screen === "playing" && !stageReview) startGameMusic(audio, stageIndex + 1);
-  }, [ensureAudio, screen, stageIndex, stageReview]);
+    else if (screen === "playing" && !stageReview && countdown === null) startGameMusic(audio, stageIndex + 1);
+  }, [countdown, ensureAudio, screen, stageIndex, stageReview]);
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (screen === "playing" && soundOn && !stageReview) startGameMusic(audio, stageIndex + 1);
+    if (screen === "playing" && soundOn && !stageReview && countdown === null) startGameMusic(audio, stageIndex + 1);
     else stopGameMusic(audio);
-  }, [screen, soundOn, stageIndex, stageReview]);
+  }, [countdown, screen, soundOn, stageIndex, stageReview]);
+  useEffect(() => {
+    if (screen !== "playing" || countdown === null) return;
+    engineRef.current?.setPaused(true);
+    const timer = window.setTimeout(() => {
+      if (countdown > 1) {
+        setCountdown(countdown - 1);
+        playFx("move");
+      } else {
+        setCountdown(null);
+        engineRef.current?.setPaused(false);
+        setChapterFlash(true);
+        playFx("start");
+        window.setTimeout(() => setChapterFlash(false), 650);
+      }
+    }, 780);
+    return () => window.clearTimeout(timer);
+  }, [countdown, playFx, screen]);
   useEffect(() => () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
@@ -615,7 +633,7 @@ export default function Home() {
   const currentUnlock = stageItemUnlocks[stageIndex];
 
   const terminateAtZero = useCallback(() => {
-    if (terminatingRef.current || reviewingRef.current) return;
+    if (countdown !== null || terminatingRef.current || reviewingRef.current) return;
     terminatingRef.current = true;
     resolvingRef.current = true;
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
@@ -639,10 +657,10 @@ export default function Home() {
     engineRef.current?.setLane(next);
     playFx("move");
     setGameEffect("dash"); window.setTimeout(() => setGameEffect(""), 160);
-  }, [playFx]);
+  }, [countdown, playFx]);
 
   const activateBoost = useCallback(() => {
-    if (screen !== "playing" || terminatingRef.current || reviewingRef.current || boostActiveRef.current || boostRef.current < 100) return;
+    if (screen !== "playing" || countdown !== null || terminatingRef.current || reviewingRef.current || boostActiveRef.current || boostRef.current < 100) return;
     boostRef.current = 0; boostActiveRef.current = true;
     setBoostCharge(0); setBoostActive(true); setGameEffect("boost");
     playFx("boost");
@@ -652,7 +670,7 @@ export default function Home() {
     boostTimerRef.current = window.setTimeout(() => {
       boostActiveRef.current = false; setBoostActive(false); engineRef.current?.setBoost(false);
     }, 2800);
-  }, [playFx, screen, stage.accent]);
+  }, [countdown, playFx, screen, stage.accent]);
 
   const resolveArcade = useCallback((kind: ArcadeKind) => {
     if (screen !== "playing" || terminatingRef.current) return;
@@ -719,7 +737,7 @@ export default function Home() {
         arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
         return;
       }
-      const damage = boostActiveRef.current ? 3 : 4;
+      const damage = boostActiveRef.current ? 3 + Math.floor(stageIndex / 3) : 4 + Math.floor(stageIndex / 2);
       const nextFragments = clamp(fragmentsRef.current - damage);
       const applied = fragmentsRef.current - nextFragments;
       fragmentsRef.current = nextFragments;
@@ -859,11 +877,11 @@ export default function Home() {
     let arcadePattern = 0;
     let energyLevel = 1;
     let builtWorldLevel = 0;
-    let paused = false;
+    let paused = countdown !== null;
     let challengeStartZ = -54;
     let courseSeconds = stages[0].courseSeconds;
     const effects: { group: THREE.Group; life: number; material: THREE.MeshBasicMaterial }[] = [];
-    const arcadeItems: { group: THREE.Group; kind: ArcadeItemKind; lane: Lane; resolved: boolean }[] = [];
+    const arcadeItems: { group: THREE.Group; kind: ArcadeItemKind; lane: Lane; resolved: boolean; baseX: number; drift: number; phase: number; speed: number }[] = [];
     const targetBackground = new THREE.Color(stage.color);
     const clock = new THREE.Clock();
 
@@ -964,9 +982,13 @@ export default function Home() {
         const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(.55, .17, 48, 8), gold); group.add(knot);
         const halo = new THREE.Mesh(new THREE.TorusGeometry(1, .07, 8, 32), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .9 })); halo.rotation.x = Math.PI / 2; group.add(halo);
       }
+      const positionSpread = [.2, .45, .7, .9, 1.1, 1.3][energyLevel - 1];
+      const drift = [0, .08, .18, .3, .42, .55][energyLevel - 1] * (.65 + Math.random() * .7);
+      const baseX = Math.max(-7.5, Math.min(7.5, laneX[lane] + (Math.random() - .5) * positionSpread * 2));
+      const y = (kind === "hazard" ? .85 : 1.15) + (Math.random() - .5) * Math.min(.5, energyLevel * .08);
       group.scale.setScalar(size);
-      group.position.set(laneX[lane], kind === "hazard" ? .85 : 1.15, z);
-      scene.add(group); arcadeItems.push({ group, kind, lane, resolved: false });
+      group.position.set(baseX, y, z + (Math.random() - .5) * Math.min(2.2, energyLevel * .35));
+      scene.add(group); arcadeItems.push({ group, kind, lane, resolved: false, baseX, drift, phase: Math.random() * Math.PI * 2, speed: 1 + energyLevel * .018 + Math.random() * .035 });
     };
 
     const spawnArcadePattern = () => {
@@ -987,6 +1009,7 @@ export default function Home() {
         spawnArcadeItem(dangerLane, "hazard", z, .92 + energyLevel * .025);
         const addBonusOrb = energyLevel >= 4 ? row % 2 === 0 : energyLevel >= 2 && row === 0;
         if (addBonusOrb) spawnArcadeItem(((rewardLane + 2) % 3) as Lane, "orb", z - 2.5, .82);
+        if (energyLevel >= 5 && row % 2 === 1) spawnArcadeItem(((rewardLane + 2) % 3) as Lane, "hazard", z - 2.2, .82 + energyLevel * .025);
       }
       if (routeRef.current === "fast") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "hazard", -31 - rows * 5.2, 1.08);
       if (routeRef.current === "safe") spawnArcadeItem(Math.floor(Math.random() * 3) as Lane, "repair", -31 - rows * 5.2, .92);
@@ -1101,12 +1124,13 @@ export default function Home() {
       }
       for (let i = arcadeItems.length - 1; i >= 0; i--) {
         const item = arcadeItems[i];
-        item.group.position.z += worldTravel * 1.12;
+        item.group.position.z += worldTravel * 1.12 * item.speed;
+        item.group.position.x = item.baseX + Math.sin(elapsed * (1.8 + energyLevel * .22) + item.phase) * item.drift;
         item.group.rotation.y += dt * (item.kind === "hazard" ? 7.2 : item.kind === "hyper" ? 6.2 : 4.8);
         item.group.position.y += Math.sin(elapsed * 8 + i) * dt * .18;
         if (!item.resolved && item.group.position.z >= 4.7) {
           item.resolved = true;
-          if (Math.abs(player.position.x - laneX[item.lane]) < 1.65) arcadeResolveRef.current(item.kind);
+          if (Math.abs(player.position.x - item.group.position.x) < Math.max(1.42, 1.82 - energyLevel * .065)) arcadeResolveRef.current(item.kind);
           else if (item.kind === "hazard") arcadeResolveRef.current("dodge");
         }
         if (item.group.position.z > 13) removeArcadeItem(i);
@@ -1170,12 +1194,13 @@ export default function Home() {
   }, [screen]);
 
   useEffect(() => {
-    if (screen !== "playing" || !engineRef.current) return;
+    if (screen !== "playing" || countdown !== null || !engineRef.current) return;
     resolvingRef.current = false;
+    engineRef.current.setPaused(false);
     engineRef.current.setWorld(stage.color, stage.accent);
     engineRef.current.setEnergy(challenge.world ?? Math.min(6, stageIndex + 1), route, stageIndex + 1);
     engineRef.current.spawnChallenge(challenge, stage.accent, speed);
-  }, [challenge, route, screen, speed, stage.accent, stage.color, stageIndex]);
+  }, [challenge, countdown, route, screen, speed, stage.accent, stage.color, stageIndex]);
 
   const finishStage = useCallback((endFragments: number) => {
     const completed: StageStat = { name: stage.name, start: stageStartRef.current, end: endFragments, lost: stageLostRef.current, recovered: stageRecoveredRef.current, route: routeRef.current };
@@ -1280,8 +1305,7 @@ export default function Home() {
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
     setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0));
-    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
-    window.setTimeout(() => setChapterFlash(false), 650);
+    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(false); setCountdown(3); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
   };
 
   const continueStage = () => {
@@ -1369,8 +1393,8 @@ export default function Home() {
 
   return (
     <main className={`signal-game ${motionReduced ? "reduced" : ""}`} style={{ "--accent": stage.accent, "--world": stage.color } as React.CSSProperties}
-      onPointerDown={(event) => { if (screen === "playing" && !stageReview) pointerStartRef.current = event.clientX; }}
-      onPointerUp={(event) => { if (screen !== "playing" || stageReview || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
+      onPointerDown={(event) => { if (screen === "playing" && countdown === null && !stageReview) pointerStartRef.current = event.clientX; }}
+      onPointerUp={(event) => { if (screen !== "playing" || countdown !== null || stageReview || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
 
       {screen === "intro" && <section className="story-intro">
         <header className="story-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div><label className="sound-toggle"><span>{soundOn ? "사운드 ON" : "사운드 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label></header>
@@ -1384,7 +1408,7 @@ export default function Home() {
           <p className="mission-tag">MISSION · 여섯 번의 전송을 모두 성공시켜라</p>
           <p>여섯 임무는 모두 내 방에서 출발하지만 데이터마다 다른 예시 경로를 달립니다. 문자가 도착하면 사진, 음성, 동영상, 대용량 파일, 실시간 스트리밍을 새로 보냅니다. 데이터가 클수록 보낼 조각과 판단 구간이 늘어나며, 재도전할 때마다 사건과 갈림길 조합도 달라집니다.</p>
           <button className="battle-start" onClick={startGame}><b>전송 배틀 시작</b><span>RUSH →</span></button>
-          <small>방향키·A/D·스와이프로 이동 · 부스트 사용 · 재도전마다 질문과 경로 조합 변경</small>
+          <small>3·2·1 이후 출발 · 방향키·A/D·스와이프 이동 · 뒤 스테이지일수록 아이템이 빠르고 불규칙해집니다</small>
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/hero-pixel.png" alt="메시지 봉투를 들고 달리는 귀여운 전송 요정 픽셀" /><div className="pixel-speech"><b>픽셀</b><span>“한 번에 하나씩, 친구에게 꼭 전할게!”</span></div></div>
         <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>집 출발 · {item.payloadSize} · {dataPaces[index]}</small></div>)}</div>
@@ -1394,6 +1418,7 @@ export default function Home() {
       {screen === "playing" && <section className={`live-runner energy-${stageIndex + 1} route-${route} ${gameEffect} ${boostActive ? "overdrive" : ""}`}>
         <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
         <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
+        {countdown !== null && <div className="start-countdown" role="status" aria-live="assertive"><small>TRANSMISSION READY</small><strong key={countdown}>{countdown}</strong><span>친구에게 보낼 준비!</span></div>}
         <header className="live-topbar">
           <div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>현재 {currentWorld} · {stage.place} · {stage.distance}</span></div>

@@ -9,7 +9,7 @@ type RouteMode = "fast" | "balanced" | "safe";
 type Screen = "intro" | "playing" | "result";
 type EventKind = "gate" | "hazard" | "attenuation" | "booster" | "bottleneck" | "recovery" | "route";
 type Option = { label: string; detail: string; delta: number; route?: RouteMode };
-type Challenge = { type: EventKind; kicker: string; prompt: string; options: [Option, Option, Option] };
+type Challenge = { type: EventKind; kicker: string; prompt: string; options: [Option, Option, Option]; world?: number };
 type Stage = { name: string; place: string; distance: string; payload: string; payloadSize: string; courseSeconds: number; color: string; accent: string; story: string; friendReply: string; lesson: string; events: Challenge[] };
 type StageStat = { name: string; start: number; end: number; lost: number; recovered: number; route: RouteMode };
 type DecisionRecord = { stage: string; event: string; choice: string; detail: string; delta: number; points: number; route?: RouteMode };
@@ -24,7 +24,7 @@ type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
   setWorld: (color: string, accent: string) => void;
   setLane: (lane: Lane) => void;
-  setEnergy: (level: number, route: RouteMode) => void;
+  setEnergy: (worldLevel: number, route: RouteMode, paceLevel: number) => void;
   setBoost: (active: boolean) => void;
   setPaused: (active: boolean) => void;
   triggerEffect: (delta: number, accent: string) => void;
@@ -32,12 +32,12 @@ type Engine = {
 };
 
 const O = (label: string, detail: string, delta: number, route?: RouteMode): Option => ({ label, detail, delta, route });
-const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Option, Option]): Challenge => ({ type, kicker, prompt, options });
+const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Option, Option], world?: number): Challenge => ({ type, kicker, prompt, options, world });
 
 const stages: Stage[] = [
   {
-    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.1, color: "#dff9ff", accent: "#00b895",
-    story: "첫 번째 임무는 친구에게 생일 축하 문자를 보내는 일이다. 픽셀은 4 KB 문자 조각 100개를 품고 공유기를 향해 달린다.",
+    name: "문자 임무", place: "내 방 → Wi‑Fi → 도시망 → 친구 폰", distance: "6개 전송 구간", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.1, color: "#dff9ff", accent: "#00b895",
+    story: "첫 번째 임무는 내 방에서 친구에게 생일 축하 문자를 보내는 일이다. 짧고 가벼운 문자는 Wi‑Fi와 도시망을 거쳐 빠르게 친구 폰으로 향한다.",
     friendReply: "문자 잘 받았어! 멀리서도 먼저 축하해 줘서 고마워.",
     lesson: "가까운 거리도 벽과 전자기기의 간섭을 받는다.",
     events: [
@@ -47,8 +47,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "도시", place: "광케이블 → 교환기", distance: "28 km", payload: "이미지", payloadSize: "5 MB", courseSeconds: 2.8, color: "#f0ebff", accent: "#7d55d9",
-    story: "두 번째 임무는 함께 찍은 생일 사진을 보내는 일이다. 새로 준비한 5 MB 이미지 조각 100개가 도시 광케이블로 출발한다.",
+    name: "이미지 임무", place: "내 방 → 광케이블 → 교환기 → 캐시 → 친구 폰", distance: "7개 전송 구간", payload: "이미지", payloadSize: "5 MB", courseSeconds: 2.8, color: "#f0ebff", accent: "#7d55d9",
+    story: "두 번째 임무도 내 방에서 시작한다. 5 MB 사진은 문자보다 많은 조각으로 나뉘어 광케이블, 교환기와 이미지 캐시를 지나 친구 화면으로 간다.",
     friendReply: "우리 함께 찍은 사진이다! 화면도 선명하게 잘 보여.",
     lesson: "빠른 회선도 사용자가 몰리면 대역폭 병목이 생긴다.",
     events: [
@@ -58,8 +58,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.5, color: "#e7f5ff", accent: "#1688d4",
-    story: "세 번째 임무는 직접 녹음한 축하 음성을 보내는 일이다. 새로 출발한 25 MB 음성 조각은 서버 사본의 도움을 받을 수 있다.",
+    name: "음성 임무", place: "내 방 → 5G → 엣지 서버 → 해저망 → 친구 폰", distance: "8개 전송 구간", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.5, color: "#e7f5ff", accent: "#1688d4",
+    story: "세 번째 임무는 내 방에서 녹음한 축하 음성을 보내는 일이다. 음성 조각은 5G 기지국과 엣지 서버를 지나며 빠진 소리를 재전송한다.",
     friendReply: "목소리가 또렷하게 들려! 바로 옆에서 말하는 것 같아.",
     lesson: "서버 복제와 캐시는 잃은 정보를 다시 보낼 수 있게 한다.",
     events: [
@@ -69,8 +69,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "바다", place: "해저 케이블", distance: "10,248 km", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4.2, color: "#dff7ff", accent: "#009bc2",
-    story: "네 번째 임무는 생일 영상 편지를 보내는 일이다. 새로 준비한 180 MB 동영상 조각은 1만 km 해저 케이블을 건넌다.",
+    name: "동영상 임무", place: "내 방 → 데이터센터 → 해저 케이블 → CDN → 친구 폰", distance: "9개 전송 구간", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4.2, color: "#dff7ff", accent: "#009bc2",
+    story: "네 번째 임무는 내 방에서 만든 생일 영상 편지를 보내는 일이다. 180 MB 동영상은 데이터센터에서 나뉘어 1만 km 해저 케이블과 CDN을 건넌다.",
     friendReply: "영상 편지가 끝까지 재생됐어. 바다 밑으로 왔다니 놀라워!",
     lesson: "국제 인터넷의 대부분은 해저 케이블을 지나며 중계기가 약해진 빛을 되살린다.",
     events: [
@@ -81,8 +81,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "하늘", place: "위성 중계", distance: "35,786 km", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 5, color: "#f5ecff", accent: "#b044b6",
-    story: "다섯 번째 임무는 추억을 모은 1.2 GB 대용량 파일을 보내는 일이다. 새 데이터 조각 100개가 폭우와 긴 위성 경로에 도전한다.",
+    name: "대용량 파일 임무", place: "내 방 → 유선망 → 분할 서버 → 복수 국제망 → 친구 폰", distance: "10개 전송 구간", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 5, color: "#f5ecff", accent: "#b044b6",
+    story: "다섯 번째 임무도 내 방에서 시작한다. 1.2 GB 추억 파일은 유선망으로 업로드된 뒤 여러 서버와 국제 경로에 나뉘어 전송된다.",
     friendReply: "추억 파일을 전부 열었어! 사진과 영상이 정말 많다.",
     lesson: "위성은 멀리 돌아가며 거리와 날씨, 안테나 각도의 영향을 받는다.",
     events: [
@@ -93,8 +93,8 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 5.8, color: "#f1ffdf", accent: "#6c9f00",
-    story: "마지막 임무는 친구와 실시간 생일 영상 통화를 연결하는 일이다. 저장 파일과 달리 데이터가 계속 생기므로 끊김 없는 전송이 중요하다.",
+    name: "스트리밍 임무", place: "내 방 → Wi‑Fi/5G → 엣지 → CDN → 친구 폰", distance: "11개 전송 구간", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 5.8, color: "#f1ffdf", accent: "#6c9f00",
+    story: "마지막 임무는 내 방에서 친구와 실시간 생일 영상 통화를 연결하는 일이다. 데이터가 계속 생기므로 Wi‑Fi나 5G, 엣지와 CDN을 끊김 없이 이어야 한다.",
     friendReply: "화면도 소리도 잘 들려! 이제 우리 실시간으로 함께 축하하자.",
     lesson: "마지막 연결과 재전송이 친구가 받는 영상의 완성도를 결정한다.",
     events: [
@@ -125,11 +125,112 @@ const stageEndings = [
   { code: "STREAM CONNECTED", title: "친구와 실시간으로 연결됐다!", line: "계속 만들어지는 영상과 음성이 끊기지 않고 도착해 두 친구가 같은 순간을 나눴다." },
 ];
 
-const routeChallenge: Challenge = E("route", "마지막 갈림길", "친구의 폰까지 어떤 경로로 보낼까?", [
-  O("빠른 길", "거리는 짧지만 다음 장애물이 빨라진다", -3, "fast"),
-  O("균형 경로", "거리와 위험을 균형 있게 선택했다", -5, "balanced"),
-  O("안전한 길", "멀리 돌아가지만 다음 장애물 피해가 줄어든다", -8, "safe"),
-]);
+const homePools: Challenge[][] = [
+  [
+    E("gate", "집에서 출발", "짧은 문자를 어떤 연결로 내보낼까?", [O("공유기 가까이", "강한 Wi‑Fi로 바로 출발했다", 8), O("벽 너머 Wi‑Fi", "벽 때문에 첫 신호가 약해졌다", -7), O("휴대폰 기지국", "모바일망으로 안정적으로 출발했다", 3)], 1),
+    E("gate", "첫 연결", "생일 문자를 보내기 전 무엇을 확인할까?", [O("Wi‑Fi 신호", "신호가 강한 위치를 찾아냈다", 7), O("배터리만 확인", "전송 경로의 혼잡은 놓쳤다", -3), O("전자레인지 옆", "전파 간섭 속에서 출발했다", -10)], 1),
+    E("hazard", "방 안의 간섭", "문자 조각이 집을 빠져나갈 길은?", [O("열린 문", "장애물이 적은 쪽으로 빠져나갔다", 4), O("두꺼운 벽", "벽을 통과하며 조각을 잃었다", -9), O("공유기 정면", "짧고 깨끗한 경로를 탔다", 9)], 1),
+  ],
+  [
+    E("gate", "사진 업로드", "내 방의 사진을 어느 연결에 실을까?", [O("유선 연결", "큰 사진 조각을 안정적으로 보냈다", 9), O("약한 Wi‑Fi", "업로드 중 일부 조각이 빠졌다", -9), O("가까운 5G", "빠르게 기지국으로 전송했다", 5)], 1),
+    E("bottleneck", "집의 업로드", "사진을 보내는 동안 가족도 영상을 본다.", [O("빈 5GHz", "덜 붐비는 대역을 골랐다", 8), O("혼잡 2.4GHz", "같은 통로에 데이터가 몰렸다", -11), O("잠시 압축", "크기를 줄여 병목을 완화했다", 4)], 1),
+    E("gate", "공유기 선택", "5 MB 사진이 집을 나갈 출구는?", [O("메시 공유기", "가까운 중계점을 이어 갔다", 7), O("복도 끝 공유기", "먼 거리에서 신호가 약해졌다", -8), O("모바일 핫스폿", "우회했지만 연결은 유지했다", 1)], 1),
+  ],
+  [
+    E("gate", "음성 출발", "녹음한 목소리를 어디로 보낼까?", [O("가까운 5G", "낮은 지연으로 음성이 출발했다", 8), O("지하의 LTE", "약한 신호로 조각을 잃었다", -10), O("집 Wi‑Fi", "안정적인 공유기를 탔다", 5)], 1),
+    E("bottleneck", "동시 업로드", "음성 파일을 올릴 때 게임 업데이트가 시작됐다.", [O("업데이트 멈춤", "업로드 대역폭을 확보했다", 8), O("둘 다 전송", "대역폭이 나뉘어 음성이 밀렸다", -12), O("음성 우선", "작은 지연으로 순서를 지켰다", 5)], 1),
+    E("gate", "첫 패킷", "목소리 조각의 첫 경로를 정하자.", [O("오류 검사 켬", "조각의 손상을 일찍 발견했다", 6), O("검사 없이 전송", "빠르지만 손상된 조각을 놓쳤다", -7), O("엣지 서버 연결", "가까운 서버가 바로 받았다", 9)], 1),
+  ],
+  [
+    E("bottleneck", "영상 업로드", "180 MB 영상을 집에서 어떻게 올릴까?", [O("유선 업로드", "넓은 대역폭으로 안정적으로 출발했다", 10), O("먼 Wi‑Fi", "큰 영상이 병목에 걸렸다", -13), O("5G 업로드", "빠르지만 조금 흔들렸다", 3)], 1),
+    E("gate", "화질 설정", "생일 영상의 첫 전송 설정은?", [O("적응형 화질", "회선에 맞춰 조각 크기를 조절했다", 7), O("최고 화질 고정", "집의 업로드 한계를 넘었다", -11), O("균형 화질", "화질과 안정성을 함께 지켰다", 5)], 1),
+    E("hazard", "집안 혼잡", "여러 기기가 같은 공유기를 쓴다.", [O("영상 우선 모드", "공유기가 영상 조각을 먼저 보냈다", 8), O("자동 다운로드", "큰 다운로드와 충돌했다", -14), O("가까이 이동", "신호를 강하게 만들었다", 5)], 1),
+  ],
+  [
+    E("bottleneck", "1.2 GB 출발", "대용량 파일을 집에서 어떻게 보낼까?", [O("유선망", "오래 걸리는 업로드를 안정적으로 시작했다", 10), O("약한 Wi‑Fi", "많은 조각이 반복해서 끊겼다", -15), O("5G 핫스폿", "빠르지만 신호 변화가 있었다", 2)], 1),
+    E("gate", "파일 나누기", "큰 파일을 전송하기 전에 무엇을 할까?", [O("여러 조각으로 분할", "실패한 조각만 다시 보낼 수 있게 했다", 9), O("한 덩어리 전송", "오류가 나자 큰 구간이 손실됐다", -13), O("압축 후 전송", "크기를 줄여 출발했다", 6)], 1),
+    E("recovery", "업로드 검사", "집을 나가기 전 빠진 조각을 발견했다.", [O("누락 조각 재전송", "빠진 부분만 채웠다", 11), O("그대로 출발", "빈 조각을 남긴 채 떠났다", -8), O("전체 다시 보내기", "회선은 오래 썼지만 복구했다", 4)], 1),
+  ],
+  [
+    E("gate", "라이브 시작", "내 방에서 영상 통화를 어떤 망으로 시작할까?", [O("Wi‑Fi 6", "빠르고 가까운 공유기에 연결했다", 9), O("약한 LTE", "실시간 조각이 계속 빠졌다", -13), O("가까운 5G", "낮은 지연으로 연결했다", 7)], 1),
+    E("bottleneck", "생방송 업로드", "실시간 영상과 소리를 함께 보낼 방법은?", [O("적응형 전송", "회선 상태에 맞춰 화질을 바꿨다", 9), O("4K 고정", "업로드 대역폭이 부족해졌다", -15), O("음성 우선", "화면은 줄이고 대화는 지켰다", 4)], 1),
+    E("hazard", "집안 신호 변화", "통화 중 다른 방으로 이동해야 한다.", [O("메시 Wi‑Fi", "공유기 사이를 부드럽게 넘었다", 8), O("신호 끊긴 복도", "전환 중 데이터가 사라졌다", -14), O("한자리에 머물기", "안정적인 신호를 유지했다", 5)], 1),
+  ],
+];
+
+const bonusPools: Challenge[][] = [
+  [
+    E("bottleneck", "동네 회선", "작은 문자도 출근 시간 회선을 만났다.", [O("빈 골목망", "덜 붐비는 회선을 골랐다", 5), O("중심 상가망", "접속자가 몰려 조각이 빠졌다", -8), O("기지국 우회", "조금 돌았지만 연결을 지켰다", 1)], 2),
+    E("gate", "도시 교환기", "친구 쪽으로 향하는 표지판은?", [O("국제망 직결", "올바른 목적지로 빠르게 향했다", 7), O("지역망 되돌기", "불필요한 우회가 생겼다", -6), O("백업 교환기", "안전하게 다음 망으로 넘겼다", 3)], 2),
+    E("hazard", "패킷 충돌", "동시에 온 신호를 피하자.", [O("빈 시간 슬롯", "충돌 없이 통과했다", 6), O("혼잡 슬롯", "신호가 부딪혀 조각을 잃었다", -11), O("재전송 슬롯", "조금 늦었지만 손실을 줄였다", 2)], 2),
+    E("attenuation", "마지막 무선", "친구 집 앞에서 신호가 약해진다.", [O("창가 기지국", "시야가 열려 감쇠가 작았다", -1), O("지하 경로", "벽과 거리가 신호를 줄였다", -9), O("근처 중계기", "약해진 신호를 보강했다", 6)], 6),
+    E("recovery", "문자 재전송", "한 조각이 빠졌다는 응답이 왔다.", [O("빠진 조각만", "필요한 부분만 다시 보냈다", 8), O("응답 무시", "문자 일부가 사라졌다", -7), O("전체 확인", "오류를 검사해 조각을 지켰다", 5)], 6),
+  ],
+  [
+    E("bottleneck", "사진 대기열", "교환기에 사진 업로드가 몰렸다.", [O("야간 회선", "비어 있는 대역폭을 찾았다", 7), O("인기 회선", "사진 조각이 긴 줄에 갇혔다", -12), O("분산 회선", "여러 통로에 나눠 보냈다", 5)], 2),
+    E("recovery", "이미지 캐시", "사진 일부가 캐시에 남아 있다.", [O("가까운 캐시", "빠진 사진 조각을 되찾았다", 13), O("빈 캐시", "저장된 사본이 없었다", 0), O("오래된 캐시", "일부 조각만 복구했다", 6)], 3),
+    E("hazard", "광케이블 공사", "도시 공사 구간을 피하자.", [O("보호 관로", "손상 없이 통과했다", 3), O("굴착기 아래", "케이블 손상으로 조각을 잃었다", -15), O("옆 구역 우회", "거리가 조금 늘었다", -4)], 2),
+    E("attenuation", "국제 광망", "사진을 먼 도시로 보낼 선로는?", [O("증폭기 선로", "빛을 보강하며 달렸다", 6), O("긴 직결 선로", "중간 보강이 없어 약해졌다", -9), O("짧은 선로", "거리를 줄여 감쇠를 낮췄다", 3)], 4),
+    E("gate", "친구 동네", "사진을 마지막으로 전달할 망은?", [O("가까운 5G", "사진이 빠르게 도착했다", 7), O("혼잡 Wi‑Fi", "마지막 병목에서 조각이 빠졌다", -8), O("유선 공유기", "안정적으로 친구 폰에 넘겼다", 5)], 6),
+  ],
+  [
+    E("bottleneck", "엣지 대기열", "음성을 처리할 가까운 서버는?", [O("한산한 엣지", "목소리를 바로 처리했다", 7), O("중앙 서버", "먼 서버까지 돌아갔다", -7), O("혼잡 엣지", "대기 중 음성이 끊겼다", -12)], 3),
+    E("recovery", "음성 사본", "빠진 소리를 어느 서버에서 찾을까?", [O("최신 복제본", "잃은 음성 조각을 복구했다", 15), O("빈 저장소", "복구할 조각이 없었다", 0), O("낡은 복제본", "일부 소리만 돌아왔다", 7)], 3),
+    E("hazard", "잡음 간섭", "무선 구간에 강한 잡음이 생겼다.", [O("주파수 전환", "깨끗한 채널로 옮겼다", 6), O("같은 채널", "잡음이 음성 조각을 가렸다", -14), O("오류 수정", "일부 손상을 고쳤다", 4)], 2),
+    E("attenuation", "해저 음성망", "목소리가 긴 바다 구간에 들어섰다.", [O("중계기 촘촘", "신호를 자주 되살렸다", 5), O("긴 무중계", "목소리가 크게 약해졌다", -12), O("북쪽 우회", "거리가 늘어 조금 약해졌다", -7)], 4),
+    E("recovery", "친구 폰 버퍼", "늦게 온 음성 조각을 어떻게 할까?", [O("짧게 기다리기", "순서를 맞춰 자연스럽게 재생했다", 8), O("즉시 재생", "단어 일부가 끊겼다", -7), O("긴 대기", "안정적이지만 일부 조각이 만료됐다", -3)], 6),
+  ],
+  [
+    E("bottleneck", "영상 서버", "180 MB 영상을 어느 서버에 올릴까?", [O("분산 업로드", "여러 서버가 조각을 나눠 받았다", 8), O("혼잡 서버", "대기열에서 조각이 빠졌다", -13), O("가까운 서버", "짧은 지연으로 업로드했다", 5)], 3),
+    E("hazard", "해저 닻", "케이블 위로 어선의 닻이 내려온다.", [O("보호 관로", "단단한 관로가 케이블을 지켰다", 3), O("닻 아래", "케이블 손상으로 영상이 깨졌다", -20), O("예비 케이블", "다른 선로로 전환했다", 5)], 4),
+    E("booster", "해저 증폭기", "약해진 빛 신호를 어디서 키울까?", [O("새 증폭기", "영상 조각이 강하게 되살아났다", 16), O("고장 증폭기", "보강하지 못했다", -8), O("낡은 증폭기", "일부 신호를 되찾았다", 7)], 4),
+    E("recovery", "CDN 사본", "친구와 가까운 영상 사본은?", [O("현지 CDN", "가까운 사본으로 빠진 조각을 채웠다", 14), O("원본 서버", "먼 길을 다시 돌아왔다", -5), O("빈 CDN", "저장된 영상이 없었다", 0)], 3),
+    E("bottleneck", "친구 동네 회선", "동시에 영상을 보는 사람이 많다.", [O("전용 스트림", "충분한 대역폭을 확보했다", 8), O("공용 회선", "영상 조각이 병목에 걸렸다", -14), O("적응형 화질", "크기를 줄여 끊김을 막았다", 4)], 6),
+  ],
+  [
+    E("gate", "분할 서버", "1.2 GB 파일 조각을 어떻게 나눌까?", [O("세 서버 분산", "여러 경로로 동시에 출발했다", 9), O("한 서버 집중", "한곳의 병목이 커졌다", -11), O("두 서버 복제", "손실에 대비한 사본을 만들었다", 7)], 3),
+    E("hazard", "국제망 장애", "한 국제 회선이 끊어졌다.", [O("예비 해저망", "자동으로 다른 케이블을 탔다", 6), O("고장 회선 대기", "많은 조각이 만료됐다", -17), O("위성 우회", "멀지만 연결을 이어 갔다", -4)], 4),
+    E("attenuation", "먼 위성 우회", "예비 위성 경로의 각도를 고르자.", [O("저궤도 중계", "가까운 위성으로 감쇠를 줄였다", -3), O("정지궤도", "긴 거리에서 조각이 약해졌다", -14), O("다중 위성", "짧은 구간으로 나눠 이동했다", 4)], 5),
+    E("recovery", "파일 체크섬", "도착한 조각 중 오류를 발견했다.", [O("오류 조각만 재전송", "정확히 빠진 부분을 복구했다", 15), O("검사 생략", "깨진 조각을 남겼다", -10), O("전체 재전송", "복구했지만 회선 부담이 커졌다", 5)], 3),
+    E("bottleneck", "마지막 다운로드", "친구 폰의 저장 공간이 부족하다.", [O("공간 정리", "파일을 받을 자리를 만들었다", 8), O("그대로 받기", "저장 중 일부 조각이 빠졌다", -13), O("클라우드 열기", "필요한 조각부터 불러왔다", 5)], 6),
+    E("booster", "복수 경로 합류", "서로 다른 길의 파일 조각이 모였다.", [O("순서대로 결합", "조각을 정확히 재조립했다", 12), O("먼저 온 순서", "파일 순서가 뒤섞였다", -9), O("중복 제거", "겹친 조각을 정리했다", 7)], 6),
+  ],
+  [
+    E("bottleneck", "도시 업링크", "실시간 영상이 도시망으로 몰린다.", [O("영상 우선 회선", "지연을 낮춰 통화를 이어 갔다", 8), O("혼잡 공용망", "프레임이 연달아 빠졌다", -15), O("화질 자동 조절", "대역폭에 맞춰 버텼다", 5)], 2),
+    E("recovery", "엣지 버퍼", "늦은 영상 조각을 어디서 채울까?", [O("가까운 엣지", "빠진 프레임을 즉시 보충했다", 13), O("먼 원본", "돌아오는 동안 새 조각이 밀렸다", -7), O("짧은 버퍼", "순서를 맞춰 재생했다", 6)], 3),
+    E("hazard", "해저망 흔들림", "실시간 연결 중 해저 지진이 감지됐다.", [O("예비 케이블 전환", "통화를 끊지 않고 경로를 바꿨다", 7), O("같은 케이블", "연속 프레임을 잃었다", -18), O("비트레이트 낮춤", "화질을 줄여 연결을 지켰다", 3)], 4),
+    E("hazard", "폭우 구간", "친구 지역에 강한 비가 내린다.", [O("지상 광망", "날씨 영향을 피해 갔다", 6), O("위성 직결", "비가 전파를 크게 약하게 했다", -16), O("저궤도 우회", "짧은 위성 구간을 탔다", -3)], 5),
+    E("bottleneck", "CDN 생중계", "시청자가 갑자기 늘었다.", [O("여러 CDN 분산", "시청 요청을 나눠 처리했다", 10), O("한 서버 집중", "서버가 병목에 걸렸다", -15), O("음성 우선 전송", "화면보다 대화를 먼저 지켰다", 4)], 3),
+    E("recovery", "친구 폰 적응", "마지막 순간 화면이 끊기려 한다.", [O("적응형 재생", "화질을 낮춰 대화를 이어 갔다", 9), O("최고 화질 유지", "프레임이 멈췄다", -13), O("2초 버퍼", "조금 늦지만 안정적으로 재생했다", 6)], 6),
+  ],
+];
+
+const routePools: Challenge[][] = [
+  [E("route", "문자의 마지막 길", "짧은 문자를 친구 폰까지 어떻게 보낼까?", [O("직접 기지국", "짧고 빠르지만 혼잡할 수 있다", -2, "fast"), O("도시망 균형", "거리와 혼잡을 함께 살폈다", 1, "balanced"), O("백업 교환기", "조금 돌지만 안전하게 도착했다", -3, "safe")], 6), E("route", "알림창 직전", "친구 동네의 마지막 연결을 골라라.", [O("가까운 5G", "가장 짧은 무선 구간을 탔다", 2, "fast"), O("안정 Wi‑Fi", "신호와 혼잡을 균형 있게 골랐다", 3, "balanced"), O("재전송 경로", "빠진 문자를 확인하며 도착했다", 5, "safe")], 6)],
+  [E("route", "사진의 마지막 길", "5 MB 사진을 어느 경로로 전달할까?", [O("직결 광망", "빠르지만 혼잡한 중심망을 탔다", -3, "fast"), O("지역 CDN", "거리와 사본을 함께 활용했다", 4, "balanced"), O("캐시 우회", "멀지만 복구 가능한 사본을 탔다", 7, "safe")], 6), E("route", "사진 배달", "친구 화면에 가장 선명하게 도착할 길은?", [O("최단 회선", "짧지만 오류 검사가 적다", -2, "fast"), O("검사 교환기", "속도와 정확도를 맞췄다", 3, "balanced"), O("복제 서버", "사본을 확인하며 안전하게 갔다", 6, "safe")], 6)],
+  [E("route", "목소리의 마지막 길", "음성의 순서를 지키며 어떻게 도착할까?", [O("실시간 직결", "지연은 짧지만 손실에 민감하다", -2, "fast"), O("짧은 버퍼", "순서와 지연을 균형 잡았다", 4, "balanced"), O("재전송 서버", "조금 기다려 빠진 소리를 채웠다", 8, "safe")], 6), E("route", "스피커 직전", "친구가 또렷하게 들을 경로는?", [O("낮은 지연", "가장 먼저 온 음성을 재생했다", 1, "fast"), O("오류 수정", "손상과 지연을 함께 줄였다", 5, "balanced"), O("완전 검사", "늦지만 빠진 소리를 더 복구했다", 9, "safe")], 6)],
+  [E("route", "영상의 마지막 길", "해저 케이블 뒤 어느 배달망을 탈까?", [O("원본 직결", "짧지만 먼 원본에 의존한다", -4, "fast"), O("현지 CDN", "가까운 사본으로 균형 있게 보냈다", 5, "balanced"), O("복제 CDN", "두 사본을 확인하며 도착했다", 9, "safe")], 6), E("route", "재생 버튼 직전", "친구가 영상을 끝까지 볼 경로는?", [O("즉시 재생", "빠르지만 늦은 조각은 놓친다", -3, "fast"), O("짧은 버퍼", "속도와 끊김을 균형 잡았다", 5, "balanced"), O("완전 다운로드", "오래 걸리지만 조각을 더 지켰다", 8, "safe")], 6)],
+  [E("route", "파일의 마지막 길", "1.2 GB 조각들을 어떻게 모을까?", [O("가장 빠른 서버", "한 경로에 집중해 빠르게 받았다", -5, "fast"), O("두 경로 합류", "속도와 복구를 균형 잡았다", 5, "balanced"), O("세 사본 검사", "느리지만 빠진 조각을 더 찾았다", 10, "safe")], 6), E("route", "저장 직전", "친구 폰에 큰 파일을 저장할 방법은?", [O("한 번에 받기", "빠르지만 오류가 나면 손실이 크다", -4, "fast"), O("조각별 확인", "받은 조각을 차례로 검사했다", 6, "balanced"), O("클라우드 복제", "사본과 비교하며 완성했다", 10, "safe")], 6)],
+  [E("route", "통화의 마지막 길", "계속 생기는 영상을 어떤 경로로 이어 갈까?", [O("최저 지연 직결", "빠르지만 흔들림에 민감하다", -4, "fast"), O("적응형 CDN", "화질과 지연을 계속 조절했다", 7, "balanced"), O("다중망 백업", "Wi‑Fi와 5G를 번갈아 지켰다", 11, "safe")], 6), E("route", "친구와 연결", "마지막 프레임까지 지킬 선택은?", [O("4K 직결", "화려하지만 대역폭 부담이 컸다", -6, "fast"), O("자동 화질", "회선 상태에 맞춰 이어 갔다", 8, "balanced"), O("음성 우선 백업", "화면이 흔들려도 대화를 지켰다", 10, "safe")], 6)],
+];
+
+const missionEventCounts = [6, 7, 8, 9, 10, 11];
+const lastStageLayouts: string[] = [];
+const shuffled = <T,>(items: T[]) => [...items].sort(() => Math.random() - .5);
+const pickOne = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
+const pickStageEvents = (index: number) => {
+  let picked: Challenge[] = [];
+  let signature = "";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    picked = [pickOne(homePools[index]), ...shuffled([...stages[index].events, ...bonusPools[index]]).slice(0, missionEventCounts[index] - 1)];
+    signature = picked.map((item) => item.kicker).join("|");
+    if (signature !== lastStageLayouts[index]) break;
+  }
+  lastStageLayouts[index] = signature;
+  return picked;
+};
+const pickRouteChallenge = (index: number) => pickOne(routePools[index]);
+const worldNames = ["내 방", "도시망", "데이터센터", "해저 케이블", "위성·하늘", "친구 동네"];
 
 const laneX = [-5.2, 0, 5.2];
 const arcadeNames = [
@@ -421,6 +522,8 @@ export default function Home() {
   const [stageIndex, setStageIndex] = useState(0);
   const [eventIndex, setEventIndex] = useState(0);
   const [isRoute, setIsRoute] = useState(false);
+  const [activeEvents, setActiveEvents] = useState<Challenge[]>([homePools[0][0], ...stages[0].events, ...bonusPools[0].slice(0, 2)]);
+  const [activeRoute, setActiveRoute] = useState<Challenge>(routePools[0][0]);
   const [fragments, setFragments] = useState(100);
   const [score, setScore] = useState(0);
   const [route, setRoute] = useState<RouteMode>("balanced");
@@ -499,11 +602,12 @@ export default function Home() {
   }, []);
 
   const stage = stages[stageIndex];
-  const challenge = isRoute ? routeChallenge : stage.events[eventIndex];
-  const courseTotal = stage.events.length + (stageIndex < stages.length - 1 ? 1 : 0);
-  const courseIndex = isRoute ? stage.events.length : eventIndex;
-  const globalWave = [0, 4, 8, 12, 17, 21][stageIndex] + courseIndex;
+  const challenge = isRoute ? activeRoute : activeEvents[eventIndex];
+  const courseTotal = activeEvents.length + 1;
+  const courseIndex = isRoute ? activeEvents.length : eventIndex;
+  const globalWave = [0, 7, 15, 24, 34, 45][stageIndex] + courseIndex;
   const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
+  const currentWorld = worldNames[(challenge.world ?? Math.min(6, stageIndex + 1)) - 1];
 
   const terminateAtZero = useCallback(() => {
     if (terminatingRef.current || reviewingRef.current) return;
@@ -847,14 +951,14 @@ export default function Home() {
         speedLineMaterial.color.set(accent);
       },
       setLane(nextLane) { targetLane = nextLane; },
-      setEnergy(level, nextRoute) {
-        energyLevel = level;
-        courseSeconds = stages[level - 1].courseSeconds;
-        if (builtWorldLevel !== level) { buildWorldLandmarks(level, stages[level - 1].accent); builtWorldLevel = level; }
-        baseFov = [58, 60, 63, 66, 69, 72][level - 1] + (nextRoute === "fast" ? 3 : nextRoute === "safe" ? -1 : 0);
+      setEnergy(worldLevel, nextRoute, paceLevel) {
+        energyLevel = paceLevel;
+        courseSeconds = stages[paceLevel - 1].courseSeconds;
+        if (builtWorldLevel !== worldLevel) { buildWorldLandmarks(worldLevel, stages[paceLevel - 1].accent); builtWorldLevel = worldLevel; }
+        baseFov = [58, 60, 63, 66, 69, 72][paceLevel - 1] + (nextRoute === "fast" ? 3 : nextRoute === "safe" ? -1 : 0);
         targetFov = Math.min(82, baseFov + (boostActiveRef.current ? 7 : 0));
-        speedLineMaterial.opacity = Math.min(.72, .12 + level * .085 + (nextRoute === "fast" ? .2 : 0));
-        key.intensity = 3.2 + level * .55;
+        speedLineMaterial.opacity = Math.min(.72, .12 + paceLevel * .085 + (nextRoute === "fast" ? .2 : 0));
+        key.intensity = 3.2 + paceLevel * .55;
       },
       setBoost(active) {
         speedMultiplier = active ? 1.58 : 1;
@@ -991,7 +1095,7 @@ export default function Home() {
     if (screen !== "playing" || !engineRef.current) return;
     resolvingRef.current = false;
     engineRef.current.setWorld(stage.color, stage.accent);
-    engineRef.current.setEnergy(stageIndex + 1, route);
+    engineRef.current.setEnergy(challenge.world ?? Math.min(6, stageIndex + 1), route, stageIndex + 1);
     engineRef.current.spawnChallenge(challenge, stage.accent, speed);
   }, [challenge, route, screen, speed, stage.accent, stage.color, stageIndex]);
 
@@ -1079,24 +1183,14 @@ export default function Home() {
 
     nextTimerRef.current = window.setTimeout(() => {
       setOutcome(null);
-      if (eventIndex < stage.events.length - 1) {
+      if (eventIndex < activeEvents.length - 1) {
         setEventIndex((value) => value + 1);
       } else {
-        if (stageIndex < stages.length - 1) {
-          setIsRoute(true);
-          setRadio("루미: “친구 폰 앞 마지막 갈림길이야. 남은 조각을 보고 경로를 골라!”");
-        } else {
-          const completed = finishStage(nextFragments);
-          const ending = stageEndings[stageIndex];
-          reviewingRef.current = true;
-          engineRef.current?.setPaused(true);
-          playFx("clear");
-          setStageReview({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments, startFragments: completed.start, stageScore: scoreRef.current - stageScoreStartRef.current, totalScore: scoreRef.current, story: stage.story });
-          setRadio(`픽셀: “${ending.title}. 마지막 기록을 확인해 줘!”`);
-        }
+        setIsRoute(true);
+        setRadio("루미: “친구 폰 앞 마지막 갈림길이야. 남은 조각과 경로 조건을 함께 보고 골라!”");
       }
     }, 280);
-  }, [challenge, eventIndex, finishStage, isRoute, playFx, screen, stage.events.length, stageIndex, terminateAtZero]);
+  }, [activeEvents.length, challenge, eventIndex, finishStage, isRoute, playFx, screen, stageIndex, terminateAtZero]);
 
   useEffect(() => { resolveRef.current = resolveChallenge; }, [resolveChallenge]);
 
@@ -1107,6 +1201,7 @@ export default function Home() {
     laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
+    setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0));
     setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
     window.setTimeout(() => setChapterFlash(false), 650);
   };
@@ -1135,6 +1230,8 @@ export default function Home() {
     setBoostCharge(0);
     setBoostActive(false);
     engineRef.current?.setBoost(false);
+    setActiveEvents(pickStageEvents(nextStage));
+    setActiveRoute(pickRouteChallenge(nextStage));
     setStageIndex(nextStage);
     setEventIndex(0);
     setIsRoute(false);
@@ -1205,12 +1302,12 @@ export default function Home() {
             <strong>시그널 러시</strong>
           </div>
           <p className="mission-tag">MISSION · 여섯 번의 전송을 모두 성공시켜라</p>
-          <p>먼 곳의 친구에게 먼저 문자를 보냅니다. 친구가 잘 받으면 첫 스테이지를 클리어하고, 다음에는 사진을 새로 보냅니다. 실제 통신 경로의 거리는 같아도 데이터가 클수록 보내야 할 조각이 많아집니다. 게임에서는 이를 더 길고 빠른 코스로 체험합니다.</p>
+          <p>여섯 임무는 모두 내 방에서 출발하지만 데이터마다 다른 예시 경로를 달립니다. 문자가 도착하면 사진, 음성, 동영상, 대용량 파일, 실시간 스트리밍을 새로 보냅니다. 데이터가 클수록 보낼 조각과 판단 구간이 늘어나며, 재도전할 때마다 사건과 갈림길 조합도 달라집니다.</p>
           <button className="battle-start" onClick={startGame}><b>전송 배틀 시작</b><span>RUSH →</span></button>
-          <small>방향키·A/D·스와이프로 이동 · 스페이스바로 충전된 부스트 사용</small>
+          <small>방향키·A/D·스와이프로 이동 · 부스트 사용 · 재도전마다 질문과 경로 조합 변경</small>
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/hero-pixel.png" alt="메시지 봉투를 들고 달리는 귀여운 전송 요정 픽셀" /><div className="pixel-speech"><b>픽셀</b><span>“한 번에 하나씩, 친구에게 꼭 전할게!”</span></div></div>
-        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>{item.payloadSize} · {dataPaces[index]}</small></div>)}</div>
+        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>집 출발 · {item.payloadSize} · {dataPaces[index]}</small></div>)}</div>
         <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 평균 도착률 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
@@ -1219,7 +1316,7 @@ export default function Home() {
         <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
         <header className="live-topbar">
           <div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
-          <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>{stage.name} · {stage.place} · {stage.distance}</span></div>
+          <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>현재 {currentWorld} · {stage.place} · {stage.distance}</span></div>
           <div className="live-settings"><label className="sound-toggle"><span>{soundOn ? "소리 ON" : "소리 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label><label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label></div>
         </header>
         <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>{dataPaces[stageIndex]}</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>

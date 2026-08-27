@@ -1,147 +1,257 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
 import { Switch } from "@/components/ui/switch";
 
 type Lane = 0 | 1 | 2;
-type RouteMode = "balanced" | "fast" | "safe";
-type Screen = "intro" | "stageIntro" | "playing" | "route" | "result";
-type EventOption = { label: string; detail: string; delta: number };
-type TrackEvent = { type: "gate" | "hazard" | "attenuation" | "booster" | "bottleneck" | "recovery"; kicker: string; prompt: string; options: [EventOption, EventOption, EventOption] };
-type Stage = { emoji: string; name: string; place: string; lesson: string; color: string; accent: string; distance: string; events: TrackEvent[] };
+type RouteMode = "fast" | "balanced" | "safe";
+type Screen = "intro" | "playing" | "result";
+type EventKind = "gate" | "hazard" | "attenuation" | "booster" | "bottleneck" | "recovery" | "route";
+type Option = { label: string; detail: string; delta: number; route?: RouteMode };
+type Challenge = { type: EventKind; kicker: string; prompt: string; options: [Option, Option, Option] };
+type Stage = { name: string; place: string; distance: string; color: string; accent: string; story: string; lesson: string; events: Challenge[] };
 type StageStat = { name: string; start: number; end: number; lost: number; recovered: number; route: RouteMode };
 
-const E = (type: TrackEvent["type"], kicker: string, prompt: string, options: [EventOption, EventOption, EventOption]): TrackEvent => ({ type, kicker, prompt, options });
-const O = (label: string, detail: string, delta: number): EventOption => ({ label, detail, delta });
+type Engine = {
+  spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
+  setWorld: (color: string, accent: string) => void;
+  setLane: (lane: Lane) => void;
+  destroy: () => void;
+};
+
+const O = (label: string, detail: string, delta: number, route?: RouteMode): Option => ({ label, detail, delta, route });
+const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Option, Option]): Challenge => ({ type, kicker, prompt, options });
 
 const stages: Stage[] = [
   {
-    emoji: "📱", name: "내 방", place: "휴대폰 → 공유기", lesson: "가까운 거리도 벽과 전자기기의 간섭을 받아요.", color: "#061d2b", accent: "#4fffd2", distance: "12 m",
+    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", color: "#071d28", accent: "#47f5ce",
+    story: "전송 버튼이 눌리는 순간, 영상 조각들이 작은 전송 요정 ‘픽셀’로 깨어났다. 첫 관문은 방 안의 공유기다.",
+    lesson: "가까운 거리도 벽과 전자기기의 간섭을 받는다.",
     events: [
-      E("gate", "갈림 게이트", "공유기까지 어떤 신호를 탈까?", [O("5GHz 직선", "빠르고 선명", 9), O("벽 두 개", "신호 감쇠", -13), O("2.4GHz 우회", "멀리까지 안정", 5)]),
-      E("hazard", "전파 간섭", "전자레인지가 켜졌다! 빈 통로로 피하자.", [O("책상 아래", "간섭 회피", 0), O("전자레인지", "강한 간섭", -18), O("문 쪽", "약한 간섭", -4)]),
-      E("booster", "신호 증폭", "공유기의 가장 강한 신호를 잡아라.", [O("구석", "신호 약함", -5), O("공유기 정면", "조각 회복", 12), O("닫힌 문", "벽 감쇠", -7)]),
+      E("gate", "첫 신호", "공유기까지 어떤 신호를 탈까?", [O("5GHz 직선", "짧은 거리에서 빠르고 선명했다", 9), O("벽 두 개", "벽을 지날 때 신호가 크게 약해졌다", -13), O("2.4GHz 우회", "조금 느리지만 멀리까지 안정적이었다", 5)]),
+      E("hazard", "전파 간섭", "전자레인지가 켜졌다. 어느 쪽으로 피할까?", [O("책상 아래", "전자파 간섭을 비켜 갔다", 0), O("전자레인지", "같은 주파수의 간섭을 정면으로 받았다", -18), O("문 쪽", "간섭은 줄었지만 문을 통과하며 약해졌다", -4)]),
+      E("booster", "공유기 접속", "가장 안정적인 접속 위치를 찾아라.", [O("방 구석", "공유기에서 멀어 신호가 줄었다", -5), O("공유기 정면", "강한 신호로 잃은 조각을 보충했다", 12), O("닫힌 문", "문이 신호를 가로막았다", -7)]),
     ],
   },
   {
-    emoji: "🏙", name: "도시", place: "광케이블 → 교환기", lesson: "빠른 길도 사용자가 몰리면 대역폭 병목이 생겨요.", color: "#160d31", accent: "#a884ff", distance: "28 km",
+    name: "도시", place: "광케이블 → 교환기", distance: "28 km", color: "#17112e", accent: "#aa82ff",
+    story: "픽셀은 빛으로 변해 도시의 광케이블에 뛰어들었다. 하지만 퇴근 시간의 데이터가 도로처럼 밀려든다.",
+    lesson: "빠른 회선도 사용자가 몰리면 대역폭 병목이 생긴다.",
     events: [
-      E("bottleneck", "대역폭 병목", "퇴근 시간, 어느 통로가 덜 붐빌까?", [O("상업 지구", "트래픽 폭주", -14), O("전용 회선", "넓은 대역폭", 7), O("주택가", "보통 혼잡", -6)]),
-      E("hazard", "공사 구간", "끊어진 케이블을 피해 우회하자.", [O("지하 관로", "안전", 0), O("굴착 현장", "케이블 손상", -17), O("옆 교환기", "짧은 우회", -3)]),
-      E("booster", "교환기 부스터", "가장 가까운 교환기에서 신호를 보강하자.", [O("구형 장비", "소폭 회복", 5), O("혼잡 회선", "대기 발생", -8), O("새 교환기", "강한 증폭", 13)]),
+      E("bottleneck", "퇴근 시간", "어느 회선이 덜 붐빌까?", [O("상업 지구", "동시에 접속한 사람이 너무 많았다", -14), O("전용 회선", "넓은 대역폭으로 빠르게 통과했다", 7), O("주택가", "혼잡 때문에 일부 조각이 지연됐다", -6)]),
+      E("hazard", "케이블 공사", "끊어진 구간을 피해 달려라.", [O("지하 관로", "보호된 관로로 안전하게 우회했다", 0), O("굴착 현장", "손상된 케이블에서 조각이 사라졌다", -17), O("옆 교환기", "짧게 우회하며 조금 약해졌다", -3)]),
+      E("booster", "교환기", "어느 교환기에서 신호를 보강할까?", [O("구형 장비", "약하지만 신호를 다시 키웠다", 5), O("혼잡 회선", "대기열이 길어 조각이 빠졌다", -8), O("새 교환기", "깨끗한 신호로 크게 증폭됐다", 13)]),
     ],
   },
   {
-    emoji: "☁️", name: "데이터센터", place: "서버 보관 → 복제", lesson: "서버와 캐시는 잃은 정보를 다시 보내 줄 수 있어요.", color: "#071834", accent: "#62bdff", distance: "1,420 km",
+    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", color: "#071936", accent: "#64bfff",
+    story: "영상 속 마지막 인사가 깨지기 시작했다. 데이터센터의 서버 ‘루미’가 픽셀에게 말한다. ‘사본을 찾으면 되돌릴 수 있어!’",
+    lesson: "서버 복제와 캐시는 잃은 정보를 다시 보낼 수 있게 한다.",
     events: [
-      E("bottleneck", "서버 대기열", "요청이 몰렸다. 비어 있는 서버를 찾자.", [O("서버 A", "대기 82%", -10), O("서버 B", "대기 14%", 4), O("서버 C", "점검 중", -15)]),
-      E("recovery", "캐시 발견", "영상 사본이 남아 있는 캐시를 선택하자.", [O("오래된 캐시", "일부 복구", 7), O("빈 캐시", "사본 없음", 0), O("최신 캐시", "조각 재전송", 18)]),
-      E("recovery", "서버 복제", "중복 저장된 영상 조각을 합치자.", [O("원본 서버", "일반 복구", 9), O("복제 서버", "대량 복구", 16), O("백업 대기", "시간 지연", -5)]),
+      E("bottleneck", "서버 대기열", "비어 있는 서버를 찾아라.", [O("서버 A", "요청이 몰려 오래 기다렸다", -10), O("서버 B", "여유 있는 서버가 바로 응답했다", 4), O("서버 C", "점검 중인 서버에 갇혔다", -15)]),
+      E("recovery", "캐시 탐색", "영상 사본이 남은 캐시는 어디일까?", [O("오래된 캐시", "남아 있던 일부 조각을 되찾았다", 7), O("빈 캐시", "저장된 사본이 없었다", 0), O("최신 캐시", "최신 사본에서 많은 조각을 복구했다", 18)]),
+      E("recovery", "서버 복제", "복제된 조각을 합칠 서버를 골라라.", [O("원본 서버", "원본에서 일부를 재전송했다", 9), O("복제 서버", "분산된 사본을 합쳐 크게 복구했다", 16), O("백업 대기", "백업을 기다리다 조각이 지연됐다", -5)]),
     ],
   },
   {
-    emoji: "🌊", name: "바다", place: "해저 케이블", lesson: "인터넷의 대부분은 위성이 아니라 바다 밑 케이블을 지나가요.", color: "#001927", accent: "#00d9ff", distance: "10,248 km",
+    name: "바다", place: "해저 케이블", distance: "10,248 km", color: "#001824", accent: "#00dcff",
+    story: "지구 반대편으로 가는 진짜 길은 하늘이 아니라 바다 밑에 있었다. 픽셀은 1만 km 해저 케이블의 어둠 속으로 뛰어든다.",
+    lesson: "국제 인터넷의 대부분은 해저 케이블을 지나며 중계기가 약해진 빛을 되살린다.",
     events: [
-      E("attenuation", "긴 감쇠 구간", "1만 km 해저 케이블. 중계기가 가까운 선로는?", [O("깊은 해구", "긴 무중계 구간", -15), O("중계 선로", "감쇠 최소", -5), O("우회 케이블", "거리 증가", -11)]),
-      E("hazard", "해저 사고", "어선의 닻이 떨어진다!", [O("바위 지대", "지진 위험", -9), O("닻 낙하", "케이블 손상", -22), O("보호 관로", "안전 통과", 0)]),
-      E("booster", "해저 중계기", "약해진 빛 신호를 다시 키우자.", [O("고장 중계기", "증폭 실패", -7), O("광 증폭기", "강한 회복", 17), O("낡은 중계기", "약한 회복", 6)]),
-      E("attenuation", "대양 횡단", "마지막 장거리 구간을 견뎌라.", [O("직선 케이블", "짧은 감쇠", -7), O("남쪽 우회", "긴 감쇠", -14), O("북쪽 우회", "중간 감쇠", -10)]),
+      E("attenuation", "긴 감쇠", "중계기가 가까운 선로를 찾아라.", [O("깊은 해구", "중계기 없는 긴 구간에서 크게 약해졌다", -15), O("중계 선로", "가까운 중계기가 감쇠를 줄였다", -5), O("우회 케이블", "거리가 늘어 신호가 더 줄었다", -11)]),
+      E("hazard", "해저 사고", "어선의 닻이 떨어진다. 어디로 피할까?", [O("바위 지대", "해저 지진의 흔들림을 받았다", -9), O("닻 아래", "닻이 케이블을 손상시켰다", -22), O("보호 관로", "단단한 관로가 케이블을 지켰다", 0)]),
+      E("booster", "광 증폭기", "약해진 빛을 다시 키워라.", [O("고장 중계기", "증폭기가 작동하지 않았다", -7), O("광 증폭기", "빛 신호가 강하게 되살아났다", 17), O("낡은 중계기", "약하게나마 신호를 보강했다", 6)]),
+      E("attenuation", "대양 횡단", "마지막 장거리 구간을 선택하라.", [O("직선 케이블", "가장 짧아 감쇠를 줄였다", -7), O("남쪽 우회", "먼 거리만큼 신호가 약해졌다", -14), O("북쪽 우회", "중간 거리의 감쇠를 견뎠다", -10)]),
     ],
   },
   {
-    emoji: "🛰️", name: "하늘", place: "위성 중계", lesson: "위성은 멀리 돌아가고, 폭우와 각도에 영향을 받아요.", color: "#130c2e", accent: "#ff88ef", distance: "35,786 km",
+    name: "하늘", place: "위성 중계", distance: "35,786 km", color: "#150d2c", accent: "#ff83ea",
+    story: "해저 케이블 끝에서 긴급 위성 중계가 열린다. 폭우가 신호를 삼키기 전에 픽셀은 안테나의 각도를 맞춰야 한다.",
+    lesson: "위성은 멀리 돌아가며 거리와 날씨, 안테나 각도의 영향을 받는다.",
     events: [
-      E("attenuation", "우주 감쇠", "가장 짧은 위성 경로를 골라라.", [O("저궤도", "짧은 거리", -6), O("정지궤도", "아주 먼 거리", -16), O("반대 궤도", "긴 우회", -12)]),
-      E("hazard", "날씨 간섭", "폭우 구름이 몰려온다.", [O("맑은 하늘", "깨끗한 신호", 0), O("먹구름", "약한 감쇠", -8), O("폭우", "강한 감쇠", -21)]),
-      E("gate", "위성 각도", "지상 안테나와 맞는 각도를 찾자.", [O("18°", "각도 불일치", -12), O("42°", "정확히 정렬", 12), O("77°", "부분 연결", -3)]),
+      E("attenuation", "궤도 선택", "가장 짧은 위성 경로는 어디일까?", [O("저궤도", "가까운 궤도로 감쇠를 줄였다", -6), O("정지궤도", "아주 먼 거리에서 신호가 약해졌다", -16), O("반대 궤도", "긴 우회로 조각이 줄었다", -12)]),
+      E("hazard", "날씨 간섭", "폭우 구름을 피해 달려라.", [O("맑은 하늘", "날씨 간섭 없이 통과했다", 0), O("먹구름", "수분이 전파를 조금 약하게 했다", -8), O("폭우", "강한 비가 위성 신호를 크게 줄였다", -21)]),
+      E("gate", "안테나 각도", "지상 안테나와 맞는 각도를 찾아라.", [O("18도", "안테나가 위성을 놓쳤다", -12), O("42도", "정확히 정렬되어 신호를 되찾았다", 12), O("77도", "일부 신호만 연결됐다", -3)]),
     ],
   },
   {
-    emoji: "🏘️", name: "친구 동네", place: "기지국 → 친구 폰", lesson: "마지막 연결과 재전송이 편지의 완성도를 결정해요.", color: "#192113", accent: "#cfff68", distance: "2.6 km",
+    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", color: "#182410", accent: "#caff61",
+    story: "친구 하람의 폰이 보인다. 생일까지 남은 시간은 단 몇 초. 픽셀은 영상의 마지막 인사까지 품고 최종 기지국을 향한다.",
+    lesson: "마지막 연결과 재전송이 친구가 받는 영상의 완성도를 결정한다.",
     events: [
-      E("gate", "마지막 기지국", "친구 집까지 가장 안정적인 연결은?", [O("혼잡 Wi-Fi", "접속자 많음", -10), O("5G 기지국", "빠른 연결", 10), O("약한 LTE", "신호 부족", -6)]),
-      E("hazard", "골목 장애물", "높은 건물이 신호를 가린다.", [O("건물 뒤", "신호 차단", -14), O("큰길", "시야 확보", 0), O("지하 주차장", "강한 감쇠", -18)]),
-      E("recovery", "마지막 재전송", "도착 직전, 잃은 조각을 한 번 더 요청하자.", [O("건너뛰기", "바로 재생", 0), O("부분 요청", "일부 복구", 8), O("전체 확인", "최대 복구", 15)]),
+      E("gate", "마지막 기지국", "친구 집까지 안정적인 연결은?", [O("혼잡 Wi-Fi", "접속자가 몰려 조각이 빠졌다", -10), O("5G 기지국", "가까운 기지국이 빠르게 연결했다", 10), O("약한 LTE", "신호가 약해 일부가 사라졌다", -6)]),
+      E("hazard", "빌딩 숲", "높은 건물이 신호를 가린다.", [O("건물 뒤", "건물이 신호를 막았다", -14), O("큰길", "시야가 열린 길로 안전하게 통과했다", 0), O("지하 주차장", "지하에서 신호가 크게 약해졌다", -18)]),
+      E("recovery", "마지막 재전송", "도착 직전, 잃은 조각을 다시 요청할까?", [O("바로 재생", "남은 조각으로 바로 재생했다", 0), O("부분 요청", "빠르게 일부를 다시 받았다", 8), O("전체 확인", "검사 후 가능한 조각을 모두 복구했다", 15)]),
     ],
   },
 ];
 
-const eventNames: Record<TrackEvent["type"], string> = { gate: "갈림 게이트", hazard: "피해야 할 것", attenuation: "감쇠 구간", booster: "부스터", bottleneck: "좁은 관문", recovery: "복구 지점" };
+const routeChallenge: Challenge = E("route", "달리는 갈림길", "다음 세계까지 어떤 경로로 달릴까?", [
+  O("빠른 길", "거리는 짧지만 다음 장애물이 빨라진다", -3, "fast"),
+  O("균형 경로", "거리와 위험을 균형 있게 선택했다", -5, "balanced"),
+  O("안전한 길", "멀리 돌아가지만 다음 장애물 피해가 줄어든다", -8, "safe"),
+]);
+
+const laneX = [-5.2, 0, 5.2];
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
-const routeLabel = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "기본 경로";
-const eventAsset = (type: TrackEvent["type"]) => type === "hazard" || type === "bottleneck" ? "/game/interference-cluster.png" : "/game/relay-booster.png";
+const routeName = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "균형 경로";
+
+function labelTexture(text: string, accent: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(4,12,19,.94)";
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.roundRect(20, 20, 984, 216, 38);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 76px Pretendard, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 512, 132, 900);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function disposeObject(object: THREE.Object3D) {
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.Points)) return;
+    child.geometry?.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (material.map) material.map.dispose();
+      material.dispose();
+    });
+  });
+}
+
+function createCutePixel(accent: string) {
+  const group = new THREE.Group();
+  const cyan = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .35, roughness: .28, metalness: .25 });
+  const navy = new THREE.MeshStandardMaterial({ color: "#12344b", roughness: .36, metalness: .6 });
+  const white = new THREE.MeshStandardMaterial({ color: "#efffff", emissive: "#bffff4", emissiveIntensity: .35 });
+  const dark = new THREE.MeshStandardMaterial({ color: "#06131c", roughness: .25 });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.82, 20, 16), cyan);
+  body.scale.set(1, 1.12, .82); body.position.y = 1.05; group.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.72, 20, 16), white);
+  head.scale.set(1.05, .92, .9); head.position.y = 2.12; group.add(head);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(.95, .32, .12), dark);
+  visor.position.set(0, 2.13, -.63); group.add(visor);
+  [-.26, .26].forEach((x) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.07, 10, 8), cyan);
+    eye.position.set(x, 2.14, -.72); group.add(eye);
+  });
+  [-.34, .34].forEach((x) => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(.22, .55, 12), cyan);
+    ear.position.set(x, 2.83, 0); ear.rotation.z = x < 0 ? -.24 : .24; group.add(ear);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.14, .48, 5, 10), navy);
+    arm.position.set(x * 2.75, 1.2, 0); arm.rotation.z = x < 0 ? -.55 : .55; group.add(arm);
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.17, .46, 5, 10), navy);
+    leg.position.set(x * 1.25, .15, 0); leg.rotation.z = x < 0 ? -.16 : .16; group.add(leg);
+  });
+  const pack = new THREE.Mesh(new THREE.CylinderGeometry(.48, .58, .34, 18), navy);
+  pack.rotation.x = Math.PI / 2; pack.position.set(0, 1.15, .72); group.add(pack);
+  const core = new THREE.Mesh(new THREE.TorusGeometry(.26, .08, 10, 24), cyan);
+  core.position.set(0, 1.15, .94); group.add(core);
+  const antenna = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .36, 4, 8), navy);
+  antenna.position.set(0, 2.83, .1); group.add(antenna);
+  const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(.12, 12, 10), cyan);
+  antennaTip.position.set(0, 3.13, .1); group.add(antennaTip);
+  group.scale.setScalar(.82);
+  group.position.set(0, .15, 5.2);
+  return group;
+}
+
+function addLaneObject(container: THREE.Group, kind: EventKind, accent: string, lane: number) {
+  const coral = new THREE.MeshStandardMaterial({ color: "#ff657b", emissive: "#7a1028", emissiveIntensity: .35, roughness: .45 });
+  const cyan = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .55, roughness: .28, metalness: .25 });
+  const steel = new THREE.MeshStandardMaterial({ color: "#17364b", roughness: .32, metalness: .65 });
+  const white = new THREE.MeshStandardMaterial({ color: "#eaffff", emissive: "#b8fff4", emissiveIntensity: .2 });
+
+  if (kind === "hazard" || kind === "bottleneck") {
+    for (let i = 0; i < 5; i++) {
+      const bug = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.SphereGeometry(.45, 14, 10), coral);
+      body.scale.set(1, .82, .9); bug.add(body);
+      const face = new THREE.Mesh(new THREE.BoxGeometry(.54, .2, .08), steel);
+      face.position.set(0, .03, -.39); bug.add(face);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(.055, 8, 6), white);
+      eye.position.set(i % 2 ? -.14 : .14, .04, -.46); bug.add(eye);
+      bug.position.set((i % 3 - 1) * .82, .48, Math.floor(i / 3) * 1.05);
+      container.add(bug);
+    }
+  } else if (kind === "booster" || kind === "recovery" || kind === "attenuation") {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(.72, .95, .42, 16), steel); base.position.y = .25; container.add(base);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(.2, .42, 1.65, 14), cyan); tower.position.y = 1.18; container.add(tower);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.7, .09, 10, 24), cyan); ring.rotation.x = Math.PI / 2; ring.position.y = 1.55; container.add(ring);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(.28, 14, 10), white); orb.position.y = 2.25; container.add(orb);
+  } else {
+    const left = new THREE.Mesh(new THREE.BoxGeometry(.28, 2.8, .32), steel); left.position.set(-1.22, 1.4, 0); container.add(left);
+    const right = left.clone(); right.position.x = 1.22; container.add(right);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(2.7, .28, .32), cyan); top.position.y = 2.72; container.add(top);
+    if (kind === "route") {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(.65, .12, 10, 28), new THREE.MeshStandardMaterial({ color: lane === 0 ? "#ffc34e" : lane === 2 ? "#61caff" : accent, emissive: lane === 0 ? "#ffc34e" : lane === 2 ? "#61caff" : accent, emissiveIntensity: .65 }));
+      ring.position.y = 1.25; container.add(ring);
+    }
+  }
+}
 
 export default function Home() {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<Engine | null>(null);
+  const resolveRef = useRef<() => void>(() => {});
+  const laneRef = useRef<Lane>(1);
+  const fragmentsRef = useRef(100);
+  const routeRef = useRef<RouteMode>("balanced");
+  const resolvingRef = useRef(false);
+  const stageStartRef = useRef(100);
+  const stageLostRef = useRef(0);
+  const stageRecoveredRef = useRef(0);
+  const statsRef = useRef<StageStat[]>([]);
+  const nextTimerRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<number | null>(null);
+  const motionReducedRef = useRef(false);
+
   const [screen, setScreen] = useState<Screen>("intro");
   const [stageIndex, setStageIndex] = useState(0);
   const [eventIndex, setEventIndex] = useState(0);
-  const [lane, setLane] = useState<Lane>(1);
+  const [isRoute, setIsRoute] = useState(false);
   const [fragments, setFragments] = useState(100);
-  const [progress, setProgress] = useState(100);
-  const [motionReduced, setMotionReduced] = useState(false);
   const [route, setRoute] = useState<RouteMode>("balanced");
-  const [stats, setStats] = useState<StageStat[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [radio, setRadio] = useState(stages[0].story);
+  const [outcome, setOutcome] = useState<{ delta: number; text: string } | null>(null);
+  const [chapterFlash, setChapterFlash] = useState(false);
+  const [motionReduced, setMotionReduced] = useState(false);
   const [lostTotal, setLostTotal] = useState(0);
   const [recoveredTotal, setRecoveredTotal] = useState(0);
-  const [flash, setFlash] = useState<{ delta: number; label: string } | null>(null);
-  const [lastChoice, setLastChoice] = useState("");
-  const stageStart = useRef(100);
-  const stageLost = useRef(0);
-  const stageRecovered = useRef(0);
-  const resolved = useRef(false);
-  const laneRef = useRef<Lane>(1);
-  const fragmentsRef = useRef(100);
+  const [stats, setStats] = useState<StageStat[]>([]);
+  const [webglError, setWebglError] = useState(false);
+
+  useEffect(() => { motionReducedRef.current = motionReduced; }, [motionReduced]);
+  useEffect(() => () => {
+    if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
+  }, []);
+
   const stage = stages[stageIndex];
-  const currentEvent = stage.events[eventIndex];
-  const effectiveDuration = route === "fast" ? 5000 : route === "safe" ? 8000 : 6500;
+  const challenge = isRoute ? routeChallenge : stage.events[eventIndex];
+  const speed = route === "fast" ? 15 : route === "safe" ? 10 : 12;
 
-  const adjustedDelta = useCallback((raw: number) => {
-    if (route === "fast") return raw < 0 ? Math.round(raw * 1.25) : Math.round(raw * .8);
-    if (route === "safe") return raw < 0 ? Math.round(raw * .72) : Math.round(raw * 1.2);
-    return raw;
-  }, [route]);
-
-  const finishEvent = useCallback(() => {
-    if (resolved.current || screen !== "playing") return;
-    resolved.current = true;
-    const choice = currentEvent.options[laneRef.current];
-    const delta = adjustedDelta(choice.delta);
-    const currentFragments = fragmentsRef.current;
-    const nextFragments = clamp(currentFragments + delta);
-    const applied = nextFragments - currentFragments;
-    if (applied < 0) { setLostTotal(v => v + Math.abs(applied)); stageLost.current += Math.abs(applied); }
-    else if (applied > 0) { setRecoveredTotal(v => v + applied); stageRecovered.current += applied; }
-    fragmentsRef.current = nextFragments;
-    setFragments(nextFragments);
-    setLastChoice(choice.label);
-    setFlash({ delta: applied, label: choice.detail });
-    window.setTimeout(() => {
-      setFlash(null);
-      if (eventIndex < stage.events.length - 1) {
-        setEventIndex(v => v + 1); setProgress(100); resolved.current = false;
-      } else {
-        setStats(prev => [...prev, { name: stage.name, start: stageStart.current, end: nextFragments, lost: stageLost.current, recovered: stageRecovered.current, route }]);
-        setScreen(stageIndex === stages.length - 1 ? "result" : "route");
-      }
-    }, motionReduced ? 850 : 1150);
-  }, [adjustedDelta, currentEvent, eventIndex, motionReduced, route, screen, stage.events.length, stage.name, stageIndex]);
-
-  useEffect(() => {
-    if (screen !== "playing") return;
-    const started = performance.now();
-    const timer = window.setInterval(() => {
-      const next = Math.max(0, 100 - ((performance.now() - started) / effectiveDuration) * 100);
-      setProgress(next);
-      if (next <= 0) { window.clearInterval(timer); finishEvent(); }
-    }, 40);
-    return () => window.clearInterval(timer);
-  }, [effectiveDuration, eventIndex, finishEvent, screen]);
-
-  const move = useCallback((direction: -1 | 1) => setLane(current => {
-    const next = clamp(current + direction) as Lane;
+  const move = useCallback((direction: -1 | 1) => {
+    const next = Math.max(0, Math.min(2, laneRef.current + direction)) as Lane;
     laneRef.current = next;
-    return next;
-  }), []);
+    engineRef.current?.setLane(next);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (screen !== "playing") return;
@@ -152,76 +262,316 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [move, screen]);
 
-  const startStage = () => {
-    const entryLoss = route === "fast" ? 3 : route === "safe" ? 8 : 0;
-    stageStart.current = fragments; stageLost.current = entryLoss; stageRecovered.current = 0;
-    if (entryLoss) {
-      const next = clamp(fragmentsRef.current - entryLoss);
-      fragmentsRef.current = next;
-      setFragments(next);
-      setLostTotal(v => v + entryLoss);
+  useEffect(() => {
+    if (screen !== "playing" || !mountRef.current) return;
+    const mount = mountRef.current;
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+    } catch {
+      setWebglError(true);
+      return;
     }
-    setEventIndex(0); laneRef.current = 1; setLane(1); setProgress(100); resolved.current = false; setScreen("playing");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(stage.color);
+    scene.fog = new THREE.Fog(stage.color, 25, 105);
+    const camera = new THREE.PerspectiveCamera(55, 1, .1, 180);
+    camera.position.set(0, 7.2, 12.5);
+    camera.lookAt(0, 1.3, -18);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.className = "three-canvas";
+    mount.appendChild(renderer.domElement);
+
+    const ambient = new THREE.HemisphereLight("#dffcff", "#061019", 2.5); scene.add(ambient);
+    const key = new THREE.DirectionalLight(stage.accent, 4.2); key.position.set(-7, 13, 7); key.castShadow = true; scene.add(key);
+    const rim = new THREE.PointLight(stage.accent, 25, 40); rim.position.set(0, 4, 2); scene.add(rim);
+
+    const roadMat = new THREE.MeshStandardMaterial({ color: "#152630", roughness: .78, metalness: .08 });
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(18, 220), roadMat);
+    road.rotation.x = -Math.PI / 2; road.position.set(0, 0, -92); road.receiveShadow = true; scene.add(road);
+    const railMat = new THREE.MeshStandardMaterial({ color: "#31505f", metalness: .55, roughness: .38 });
+    [-9.15, 9.15].forEach((x) => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(.38, .65, 220), railMat);
+      rail.position.set(x, .32, -92); scene.add(rail);
+    });
+
+    const markings: THREE.Mesh[] = [];
+    const markMat = new THREE.MeshBasicMaterial({ color: "#b7d9e2", transparent: true, opacity: .46 });
+    [-2.95, 2.95].forEach((x) => {
+      for (let z = -108; z < 16; z += 8) {
+        const mark = new THREE.Mesh(new THREE.PlaneGeometry(.12, 3.3), markMat);
+        mark.rotation.x = -Math.PI / 2; mark.position.set(x, .012, z); scene.add(mark); markings.push(mark);
+      }
+    });
+
+    const sideProps: THREE.Mesh[] = [];
+    for (let i = 0; i < 34; i++) {
+      const height = 1.5 + (i % 6) * .75;
+      const geometry = i % 3 === 0 ? new THREE.CylinderGeometry(.28, .48, height, 8) : new THREE.BoxGeometry(.8 + (i % 2) * .5, height, .8);
+      const material = new THREE.MeshStandardMaterial({ color: i % 2 ? "#183543" : "#244a55", emissive: stage.accent, emissiveIntensity: .04, roughness: .55 });
+      const prop = new THREE.Mesh(geometry, material);
+      prop.position.set((i % 2 ? 1 : -1) * (11 + (i % 4) * 2.3), height / 2, -106 + i * 4.9);
+      scene.add(prop); sideProps.push(prop);
+    }
+
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(360);
+    for (let i = 0; i < starPositions.length; i += 3) {
+      starPositions[i] = (Math.random() - .5) * 55;
+      starPositions[i + 1] = 1 + Math.random() * 17;
+      starPositions[i + 2] = -115 + Math.random() * 130;
+    }
+    starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: stage.accent, size: .12, transparent: true, opacity: .62 })); scene.add(stars);
+
+    const player = createCutePixel(stage.accent); scene.add(player);
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: .35 }));
+    shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, .018, 5.2); scene.add(shadow);
+
+    let targetLane: Lane = laneRef.current;
+    let activeGroup: THREE.Group | null = null;
+    let challengeSpeed = speed;
+    let hit = false;
+    let lastHud = 0;
+    let animationId = 0;
+    let elapsed = 0;
+    const targetBackground = new THREE.Color(stage.color);
+    const clock = new THREE.Clock();
+
+    const resize = () => {
+      const width = mount.clientWidth;
+      const height = mount.clientHeight;
+      camera.aspect = width / Math.max(1, height);
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const removeChallenge = () => {
+      if (!activeGroup) return;
+      scene.remove(activeGroup);
+      disposeObject(activeGroup);
+      activeGroup = null;
+    };
+
+    const engine: Engine = {
+      spawnChallenge(nextChallenge, accent, nextSpeed) {
+        removeChallenge();
+        hit = false;
+        challengeSpeed = nextSpeed;
+        const group = new THREE.Group();
+        group.position.z = -66;
+        nextChallenge.options.forEach((option, index) => {
+          const laneGroup = new THREE.Group();
+          laneGroup.position.x = laneX[index];
+          addLaneObject(laneGroup, nextChallenge.type, accent, index);
+          const texture = labelTexture(option.label, accent);
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 1.12), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false }));
+          sign.position.set(0, 3.7, 0); sign.renderOrder = 10; laneGroup.add(sign);
+          group.add(laneGroup);
+        });
+        activeGroup = group;
+        scene.add(group);
+        setProgress(0);
+      },
+      setWorld(color, accent) {
+        targetBackground.set(color);
+        key.color.set(accent); rim.color.set(accent);
+        sideProps.forEach((prop) => ((prop.material as THREE.MeshStandardMaterial).emissive.set(accent)));
+        (stars.material as THREE.PointsMaterial).color.set(accent);
+      },
+      setLane(nextLane) { targetLane = nextLane; },
+      destroy() {
+        window.removeEventListener("resize", resize);
+        cancelAnimationFrame(animationId);
+        removeChallenge();
+        disposeObject(scene);
+        renderer.dispose();
+        renderer.domElement.remove();
+      },
+    };
+    engineRef.current = engine;
+
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), .05);
+      elapsed += dt;
+      const travel = challengeSpeed * dt;
+      markings.forEach((mark) => { mark.position.z += travel; if (mark.position.z > 16) mark.position.z -= 128; });
+      sideProps.forEach((prop) => { prop.position.z += travel * .78; if (prop.position.z > 18) prop.position.z -= 132; });
+      const positions = stars.geometry.attributes.position as THREE.BufferAttribute;
+      const starArray = positions.array as Float32Array;
+      for (let i = 2; i < starArray.length; i += 3) {
+        starArray[i] += travel * .34;
+        if (starArray[i] > 15) starArray[i] = -115;
+      }
+      positions.needsUpdate = true;
+
+      const targetX = laneX[targetLane];
+      player.position.x += (targetX - player.position.x) * Math.min(1, dt * 9);
+      shadow.position.x += (targetX - shadow.position.x) * Math.min(1, dt * 9);
+      player.position.y = .15 + Math.sin(elapsed * 10) * .08;
+      player.rotation.z = (targetX - player.position.x) * -.045;
+      player.rotation.y = Math.sin(elapsed * 3) * .035;
+      const pulse = 1 + Math.sin(elapsed * 7) * .06;
+      rim.intensity = 23 * pulse;
+
+      if (activeGroup) {
+        activeGroup.position.z += travel;
+        const spatialProgress = clamp(((activeGroup.position.z + 66) / 68) * 100);
+        if (performance.now() - lastHud > 90) { setProgress(spatialProgress); lastHud = performance.now(); }
+        if (!hit && activeGroup.position.z >= 2) { hit = true; resolveRef.current(); }
+        if (activeGroup.position.z > 17) removeChallenge();
+      }
+
+      const bg = scene.background as THREE.Color;
+      bg.lerp(targetBackground, .025);
+      scene.fog?.color.lerp(targetBackground, .025);
+      if (!motionReducedRef.current) {
+        camera.position.x = Math.sin(elapsed * 1.7) * .08;
+        camera.position.y = 7.2 + Math.sin(elapsed * 2.3) * .035;
+      } else { camera.position.x = 0; camera.position.y = 7.2; }
+      camera.lookAt(0, 1.25, -18);
+      renderer.render(scene, camera);
+    };
+    animate();
+    return () => { engine.destroy(); engineRef.current = null; };
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== "playing" || !engineRef.current) return;
+    resolvingRef.current = false;
+    engineRef.current.setWorld(stage.color, stage.accent);
+    engineRef.current.spawnChallenge(challenge, stage.accent, speed);
+  }, [challenge, screen, speed, stage.accent, stage.color]);
+
+  const finishStage = useCallback((endFragments: number) => {
+    const completed: StageStat = { name: stage.name, start: stageStartRef.current, end: endFragments, lost: stageLostRef.current, recovered: stageRecoveredRef.current, route: routeRef.current };
+    statsRef.current = [...statsRef.current, completed];
+    setStats(statsRef.current);
+  }, [stage.name]);
+
+  const resolveChallenge = useCallback(() => {
+    if (resolvingRef.current || screen !== "playing") return;
+    resolvingRef.current = true;
+    const option = challenge.options[laneRef.current];
+
+    if (isRoute) {
+      const nextRoute = option.route ?? "balanced";
+      const nextFragments = clamp(fragmentsRef.current + option.delta);
+      const applied = nextFragments - fragmentsRef.current;
+      fragmentsRef.current = nextFragments;
+      routeRef.current = nextRoute;
+      setFragments(nextFragments);
+      setRoute(nextRoute);
+      setLostTotal((value) => value + Math.abs(Math.min(0, applied)));
+      setOutcome({ delta: applied, text: `${option.label} · ${option.detail}` });
+      setRadio(`픽셀: “${option.label}로 갈게! 멈추지 말고 다음 세계로!”`);
+      nextTimerRef.current = window.setTimeout(() => {
+        const nextStage = stageIndex + 1;
+        stageStartRef.current = fragmentsRef.current;
+        stageLostRef.current = 0;
+        stageRecoveredRef.current = 0;
+        setOutcome(null);
+        setStageIndex(nextStage);
+        setEventIndex(0);
+        setIsRoute(false);
+        setChapterFlash(true);
+        setRadio(stages[nextStage].story);
+        window.setTimeout(() => setChapterFlash(false), 2200);
+      }, 850);
+      return;
+    }
+
+    let delta = option.delta;
+    if (routeRef.current === "fast") delta = delta < 0 ? Math.round(delta * 1.25) : Math.round(delta * .82);
+    if (routeRef.current === "safe") delta = delta < 0 ? Math.round(delta * .72) : Math.round(delta * 1.2);
+    const nextFragments = clamp(fragmentsRef.current + delta);
+    const applied = nextFragments - fragmentsRef.current;
+    fragmentsRef.current = nextFragments;
+    setFragments(nextFragments);
+    if (applied < 0) { stageLostRef.current += Math.abs(applied); setLostTotal((value) => value + Math.abs(applied)); }
+    if (applied > 0) { stageRecoveredRef.current += applied; setRecoveredTotal((value) => value + applied); }
+    setOutcome({ delta: applied, text: option.detail });
+    setRadio(applied < 0 ? `픽셀: “조각이 흩어졌어! ${option.detail}.”` : applied > 0 ? `루미: “좋아, ${option.detail}.”` : `픽셀: “${option.detail}. 계속 달리자!”`);
+
+    nextTimerRef.current = window.setTimeout(() => {
+      setOutcome(null);
+      if (eventIndex < stage.events.length - 1) {
+        setEventIndex((value) => value + 1);
+      } else {
+        finishStage(nextFragments);
+        if (stageIndex < stages.length - 1) {
+          setIsRoute(true);
+          setRadio("루미: “앞에 세 갈래 경로야. 지금 남은 조각을 보고 달리면서 골라!”");
+        } else {
+          setScreen("result");
+        }
+      }
+    }, 850);
+  }, [challenge, eventIndex, finishStage, isRoute, screen, stage.events.length, stageIndex]);
+
+  useEffect(() => { resolveRef.current = resolveChallenge; }, [resolveChallenge]);
+
+  const startGame = () => {
+    if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
+    laneRef.current = 1; fragmentsRef.current = 100; routeRef.current = "balanced";
+    stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = [];
+    setFragments(100); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setOutcome(null); setRadio(stages[0].story); setChapterFlash(true); setWebglError(false); setScreen("playing");
+    window.setTimeout(() => setChapterFlash(false), 2200);
   };
-  const chooseRoute = (choice: RouteMode) => { setRoute(choice); setStageIndex(v => v + 1); setScreen("stageIntro"); };
-  const restart = () => {
-    setScreen("intro"); setStageIndex(0); setEventIndex(0); laneRef.current = 1; setLane(1); fragmentsRef.current = 100; setFragments(100); setProgress(100); setRoute("balanced"); setStats([]); setLostTotal(0); setRecoveredTotal(0); setFlash(null); setLastChoice("");
-    stageStart.current = 100; stageLost.current = 0; stageRecovered.current = 0; resolved.current = false;
-  };
+
   const grade = useMemo(() => {
-    if (fragments >= 95) return { icon: "🏆", title: "완벽한 전송", story: "영상이 끝까지 재생된다. 친구가 웃다가 운다." };
-    if (fragments >= 75) return { icon: "🥇", title: "거의 다 도착", story: "영상이 한 번 끊겼다가 이어진다. 친구는 다 알아들었다." };
-    if (fragments >= 50) return { icon: "🥈", title: "절반의 편지", story: "소리만 들리고 화면은 군데군데 깨져 있다." };
-    if (fragments >= 25) return { icon: "🥉", title: "조각난 편지", story: "사진 몇 장만 떴다. 친구가 되묻는다. “뒤에 뭐라고 했어?”" };
-    return { icon: "💔", title: "닿지 못했다", story: "친구의 화면에는 … 세 점만 도착했다." };
+    if (fragments >= 95) return { icon: "완벽", title: "마음이 온전히 도착했다", story: "영상이 끝까지 재생되자 하람은 웃다가 눈물을 닦았다. 픽셀은 마지막 조각 위에서 조용히 빛났다." };
+    if (fragments >= 75) return { icon: "성공", title: "마음은 충분히 전해졌다", story: "영상은 한 번 끊겼지만 하람은 마지막 인사를 알아들었다. ‘멀리 있어도 우리는 연결되어 있어.’" };
+    if (fragments >= 50) return { icon: "절반", title: "절반의 편지가 도착했다", story: "화면은 군데군데 깨졌지만 목소리는 남았다. 하람은 사라진 장면을 마음속으로 이어 붙였다." };
+    if (fragments >= 25) return { icon: "조각", title: "몇 장면만 도착했다", story: "사진 몇 장과 웃음소리만 남았다. 하람이 메시지를 보냈다. ‘뒤에 뭐라고 했어?’" };
+    return { icon: "…", title: "세 점만 도착했다", story: "영상은 열리지 않았다. 하지만 픽셀은 사라지지 않았다. 다시 전송 버튼을 기다리며 작은 불빛으로 남았다." };
   }, [fragments]);
+
   const worstStage = stats.length ? stats.reduce((a, b) => a.lost > b.lost ? a : b) : null;
 
   return (
-    <main className={`game-shell ${motionReduced ? "reduce-motion" : ""}`} style={{ "--world": stage.color, "--accent": stage.accent } as React.CSSProperties}>
-      <header className="topbar">
-        <div className="brand" aria-label="시그널 러시"><span className="brand-mark">SR</span><span><b>시그널 러시</b><small>VIDEO LETTER PROTOCOL</small></span></div>
-        <label className="motion-toggle"><span>화면 흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" className="motion-switch" /></label>
-      </header>
+    <main className={`signal-game ${motionReduced ? "reduced" : ""}`} style={{ "--accent": stage.accent, "--world": stage.color } as React.CSSProperties}
+      onPointerDown={(event) => { if (screen === "playing") pointerStartRef.current = event.clientX; }}
+      onPointerUp={(event) => { if (screen !== "playing" || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
 
-      {screen === "intro" && <section className="intro-screen">
-        <div className="intro-copy">
-          <p className="eyebrow">지구 반대편까지 · 6개의 세계 · 1개의 영상 편지</p>
-          <h1>네가 지키는 만큼,<br /><em>마음이 도착한다.</em></h1>
-          <p className="intro-lead">전학 간 친구의 생일. 영상 편지를 이루는 정보 조각 100개가 지금 출발합니다. 경로를 고르고 간섭을 피해서, 가능한 많은 조각을 친구의 폰까지 보내세요.</p>
-          <div className="intro-actions"><button className="primary-button" onClick={() => setScreen("stageIntro")}>전송 시작 <span>→</span></button><span className="key-guide"><kbd>←</kbd><kbd>→</kbd> 또는 화면 버튼으로 이동</span></div>
+      {screen === "intro" && <section className="story-intro">
+        <header className="story-brand"><span>SR</span><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
+        <div className="intro-story-copy">
+          <p className="mission-tag">MISSION 01 · 하람의 생일 영상 편지</p>
+          <h1>작은 픽셀,<br /><em>지구를 달리다.</em></h1>
+          <p>전학 간 친구 하람의 생일. 전송 버튼이 눌리는 순간 영상 편지의 100개 조각이 귀여운 전송 요정 <b>‘픽셀’</b>로 깨어납니다. 방 안의 공유기부터 바다 밑 1만 km까지, 멈추지 않고 달려 마음을 전달하세요.</p>
+          <button onClick={startGame}>픽셀과 출발하기 <span>→</span></button>
+          <small>방향키·A/D·화면 버튼·좌우 스와이프로 이동</small>
         </div>
-        <div className="transmission-card" aria-label="전송 미리보기"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="earth-core"><span className="friend-pin">친구</span><span className="home-pin">나</span><i className="signal-dot" /></div><div className="packet-readout"><span>출발 정보량</span><strong>100<small>조각</small></strong><div className="packet-line"><i /></div></div></div>
-        <div className="world-strip" aria-label="여섯 세계">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>{item.emoji} {item.name}</b><small>{item.place}</small></div>)}</div>
+        <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/packet-squad.png" alt="귀여운 전송 요정 픽셀과 데이터 조각 친구들" /><div className="pixel-speech"><b>픽셀</b><span>“마지막 장면까지 내가 지킬게!”</span></div></div>
+        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>{item.name}</b><small>{item.place}</small></div>)}</div>
       </section>}
 
-      {screen === "stageIntro" && <section className="chapter-screen">
-        <div className="chapter-number">CHAPTER {String(stageIndex + 1).padStart(2, "0")}</div><div className="chapter-symbol">{stage.emoji}</div><h1>{stage.name}</h1><p className="chapter-place">{stage.place} · {stage.distance}</p><p className="chapter-lesson">{stage.lesson}</p>
-        {route !== "balanced" && <div className={`route-badge ${route}`}>{routeLabel(route)} 선택 · 진입 감쇠 {route === "fast" ? "−3" : "−8"}</div>}
-        <button className="primary-button" onClick={startStage}>이 세계로 진입 <span>→</span></button><div className="chapter-progress">{stages.map((item, index) => <i key={item.name} className={index <= stageIndex ? "active" : ""} />)}</div>
+      {screen === "playing" && <section className="live-runner">
+        <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
+        <header className="live-topbar">
+          <div className="live-brand"><span>SR</span><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
+          <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")}</small><b>{stage.name}</b><span>{stage.place} · {stage.distance}</span></div>
+          <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
+        </header>
+        <div className="fragment-hud"><div><span>도착 중인 영상</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><small>{routeName(route)} · {stage.lesson}</small></div>
+        <div className="challenge-hud"><span>{isRoute ? "RUNNING ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>표지판을 읽고 달리면서 차선을 바꾸세요</small><div><i style={{ width: `${progress}%` }} /></div></div>
+        {chapterFlash && <div className="chapter-flash"><small>CHAPTER {stageIndex + 1}</small><strong>{stage.name}</strong><span>{stage.story}</span></div>}
+        {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><b>{outcome.delta > 0 ? `+${outcome.delta}` : outcome.delta === 0 ? "통과" : outcome.delta}</b><span>{outcome.text}</span></div>}
+        <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
+        <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><div><b>PIXEL</b><span>달리는 중</span></div><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
+        {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
       </section>}
 
-      {screen === "playing" && <section className={`runner-screen ${flash && flash.delta < 0 ? "impact" : ""}`}>
-        <div className="hud"><div className="hud-chapter"><span>{stage.emoji}</span><div><small>CH {stageIndex + 1} · {stage.place}</small><strong>{stage.name}</strong></div></div><div className="fragment-meter"><div><span>도착 중인 정보</span><strong>{fragments}<small>/100 조각</small></strong></div><div className="meter-track"><i style={{ width: `${fragments}%` }} /></div></div><div className="route-mini"><small>현재 경로</small><strong>{routeLabel(route)}</strong></div></div>
-        <div className="event-banner"><span>{eventNames[currentEvent.type]} · 상황을 읽고 판단하세요</span><strong>{currentEvent.prompt}</strong><small>효과는 통과한 뒤에 공개됩니다</small><div className="decision-timer"><i style={{ width: `${progress}%` }} /></div></div>
-        <div className="runner-viewport"><div className="world-label">{stage.emoji} {currentEvent.kicker}</div><div className="horizon-glow" /><div className="track-grid"><div className="center-line one" /><div className="center-line two" /></div>
-          <div className="gate-row" style={{ "--approach": `${progress}` } as React.CSSProperties}>{currentEvent.options.map((option, index) => <div key={option.label} className={`gate-card ${lane === index ? "selected" : ""}`}><div className="choice-formation"><img src={eventAsset(currentEvent.type)} alt="" /><i /><i /><i /></div><strong>{option.label}</strong><small>결과 비공개</small></div>)}</div>
-          <div className={`signal-runner lane-${lane}`}><img src="/game/packet-squad.png" alt="영상 편지를 나르는 데이터 조각 팀" /><span>영상 편지</span></div>{flash && <div className={`result-flash ${flash.delta >= 0 ? "good" : "bad"}`}><strong>{flash.delta > 0 ? `+${flash.delta}` : flash.delta === 0 ? "안전 통과" : flash.delta}</strong><span>{flash.label} · {lastChoice}</span></div>}
-        </div>
-        <div className="runner-controls"><button onClick={() => move(-1)} disabled={lane === 0} aria-label="왼쪽으로 이동">←<span>왼쪽</span></button><p>빛나는 정보 덩어리를<br /><strong>원하는 통로로 이동</strong></p><button onClick={() => move(1)} disabled={lane === 2} aria-label="오른쪽으로 이동"><span>오른쪽</span>→</button></div>
-      </section>}
-
-      {screen === "route" && <section className="route-screen">
-        <div className="route-context"><span>{stage.emoji} CHAPTER {stageIndex + 1} 통과</span><strong>{fragments}개의 정보 조각이 남았다.</strong><p>{stageIndex === 2 ? "바다 앞이다. 케이블은 짧고 곧지만 어선이 많다." : `${stages[stageIndex + 1].name}로 향하는 두 경로가 열렸다. 지금 가진 조각을 보고 판단하자.`}</p></div><h1>다음 경로를 선택하세요</h1>
-        <div className="route-cards"><button className="route-card fast" onClick={() => chooseRoute("fast")}><div className="route-icon">⚡</div><span>FAST ROUTE</span><h2>빠른 길</h2><p>거리가 짧아 진입 감쇠는 적지만, 판단 시간이 짧고 충돌 피해가 커집니다.</p><ul><li><b>−3</b> 진입 감쇠</li><li><b>5초</b> 판단 시간</li><li><b>×1.25</b> 장애물 피해</li></ul><em>조각이 넉넉할 때 유리 →</em></button>
-          <button className="route-card safe" onClick={() => chooseRoute("safe")}><div className="route-icon">🛡️</div><span>SAFE ROUTE</span><h2>안전한 길</h2><p>멀리 돌아 진입 감쇠는 크지만, 중계기가 많고 장애물 피해가 작습니다.</p><ul><li><b>−8</b> 진입 감쇠</li><li><b>8초</b> 판단 시간</li><li><b>×1.2</b> 회복 효과</li></ul><em>조각이 위태로울 때 유리 →</em></button></div><p className="route-hint">정답은 하나가 아닙니다. 현재 정보량과 다음 세계의 성격을 함께 보세요.</p>
-      </section>}
-
-      {screen === "result" && <section className="result-screen">
-        <div className="result-hero"><div className="final-video" aria-label={`영상 편지 ${fragments}% 복구 화면`}><div className="video-top"><span>수신한 영상 편지</span><i>● RECOVERED {fragments}%</i></div><div className="mosaic">{Array.from({ length: 20 }).map((_, index) => <i key={index} className={index < Math.round(fragments / 5) ? "visible" : "broken"} style={{ "--delay": `${index * .04}s` } as React.CSSProperties} />)}<div className="friend-message"><span>🎂</span><strong>{fragments < 25 ? "…" : "생일 축하해!"}</strong><small>{fragments >= 50 ? "멀리 있어도 우리는 연결되어 있어." : "신호를 복구하는 중…"}</small></div></div></div>
-          <div className="grade-card"><span className="grade-icon">{grade.icon}</span><p>도착률 {fragments}%</p><h1>{grade.title}</h1><blockquote>{grade.story}</blockquote><div className="result-numbers"><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div></div></div>
-        <div className="journey-report"><div className="report-title"><div><span>전송 경로 되짚기</span><h2>정보는 어디서 가장 많이 사라졌을까?</h2></div><p>총 이동 거리 <b>약 47,000 km</b></p></div><div className="journey-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span className="journey-node">{stages[index].emoji}</span><div className="journey-name"><small>CH {index + 1}</small><strong>{item.name}</strong><em>{routeLabel(item.route)}</em></div><div className="journey-bar"><i style={{ width: `${item.end}%` }} /><span>{item.start} → {item.end}</span></div><div className="journey-delta"><b>−{item.lost}</b><em>+{item.recovered}</em></div></div>)}</div>{worstStage && <p className="learning-note"><span>발견!</span> 가장 많이 잃은 곳은 <b>{worstStage.name}</b>입니다. 거리·간섭·대역폭 중 어떤 원인이었는지 경로를 떠올려 보세요.</p>}</div>
-        <div className="result-footer"><p>네 편지는 바다 밑 1만 km와 여섯 개의 통신 세계를 지나 친구에게 도착했습니다.</p><button className="primary-button" onClick={restart}>다시 전송하기 <span>↻</span></button></div>
+      {screen === "result" && <section className="story-result">
+        <div className="ending-card"><span className="ending-mark">{grade.icon}</span><p>도착률 {fragments}%</p><h1>{grade.title}</h1><blockquote>{grade.story}</blockquote><div className="ending-stats"><div><span>잃은 조각</span><b>−{lostTotal}</b></div><div><span>되찾은 조각</span><b>+{recoveredTotal}</b></div></div><button onClick={startGame}>픽셀과 다시 달리기 <span>↻</span></button></div>
+        <div className="journey-ending"><div className="friend-screen"><div className="friend-face">H</div><strong>{fragments < 25 ? "…" : "생일 축하해, 하람!"}</strong><span>{fragments >= 50 ? "멀리 있어도 우리는 연결되어 있어." : "사라진 장면을 복구하는 중…"}</span><i style={{ width: `${fragments}%` }} /></div><h2>픽셀이 지나온 여섯 세계</h2><div className="ending-list">{stats.map((item, index) => <div key={item.name} className={worstStage?.name === item.name ? "worst" : ""}><span>{index + 1}</span><b>{item.name}</b><i><em style={{ width: `${item.end}%` }} /></i><small>{item.start} → {item.end}</small></div>)}</div>{worstStage && <p>가장 많은 조각을 잃은 곳은 <b>{worstStage.name}</b>이었습니다. 픽셀의 다음 도전에서는 어떤 조건을 다르게 고를까요?</p>}</div>
       </section>}
     </main>
   );

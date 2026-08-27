@@ -525,9 +525,11 @@ export default function Home() {
   const arcadeToastTimerRef = useRef<number | null>(null);
   const terminatingRef = useRef(false);
   const reviewingRef = useRef(false);
+  const progressRef = useRef(0);
 
   const [screen, setScreen] = useState<Screen>("intro");
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [missionRun, setMissionRun] = useState(0);
   const [stageIndex, setStageIndex] = useState(0);
   const [eventIndex, setEventIndex] = useState(0);
   const [isRoute, setIsRoute] = useState(false);
@@ -579,6 +581,7 @@ export default function Home() {
   useEffect(() => { void loadLeaderboard(); }, [loadLeaderboard]);
 
   useEffect(() => { motionReducedRef.current = motionReduced; }, [motionReduced]);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
   const ensureAudio = useCallback(() => {
     if (!audioRef.current) audioRef.current = createGameAudio();
     void audioRef.current.ctx.resume();
@@ -629,7 +632,7 @@ export default function Home() {
   }, []);
 
   const stage = stages[stageIndex];
-  const challenge = isRoute ? activeRoute : activeEvents[eventIndex];
+  const challenge = (isRoute ? activeRoute : activeEvents[eventIndex]) ?? activeEvents[0] ?? homePools[stageIndex][0];
   const courseTotal = activeEvents.length + 1;
   const courseIndex = isRoute ? activeEvents.length : eventIndex;
   const globalWave = [0, 7, 15, 24, 34, 45][stageIndex] + courseIndex;
@@ -1208,8 +1211,38 @@ export default function Home() {
     engineRef.current.setPaused(false);
     engineRef.current.setWorld(stage.color, stage.accent);
     engineRef.current.setEnergy(challenge.world ?? Math.min(6, stageIndex + 1), route, stageIndex + 1);
+    progressRef.current = 0;
     engineRef.current.spawnChallenge(challenge, stage.accent, speed);
-  }, [challenge, countdown, route, screen, speed, stage.accent, stage.color, stageIndex]);
+  }, [challenge, countdown, missionRun, route, screen, speed, stage.accent, stage.color, stageIndex]);
+
+  useEffect(() => {
+    if (screen !== "playing" || countdown !== null || stageReview || !engineRef.current) return;
+    let lastProgress = progressRef.current;
+    let stalledFor = 0;
+    const watchdog = window.setInterval(() => {
+      if (resolvingRef.current || terminatingRef.current || reviewingRef.current) return;
+      const currentProgress = progressRef.current;
+      if (currentProgress > lastProgress + .5) {
+        lastProgress = currentProgress;
+        stalledFor = 0;
+        return;
+      }
+      stalledFor += 1000;
+      if (stalledFor < 3500) return;
+      stalledFor = 0;
+      lastProgress = 0;
+      progressRef.current = 0;
+      resolvingRef.current = false;
+      engineRef.current?.setPaused(false);
+      engineRef.current?.setWorld(stage.color, stage.accent);
+      engineRef.current?.setEnergy(challenge.world ?? Math.min(6, stageIndex + 1), route, stageIndex + 1);
+      engineRef.current?.spawnChallenge(challenge, stage.accent, speed);
+      setRadio("루미: “전송이 잠시 멈춰서 같은 관문부터 자동으로 다시 연결했어!”");
+      setGameEffect("dash");
+      window.setTimeout(() => setGameEffect(""), 220);
+    }, 1000);
+    return () => window.clearInterval(watchdog);
+  }, [challenge, countdown, missionRun, route, screen, speed, stage.accent, stage.color, stageIndex, stageReview]);
 
   const finishStage = useCallback((endFragments: number) => {
     const completed: StageStat = { name: stage.name, start: stageStartRef.current, end: endFragments, lost: stageLostRef.current, recovered: stageRecoveredRef.current, route: routeRef.current };
@@ -1313,7 +1346,7 @@ export default function Home() {
     laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; shieldRef.current = 0; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
-    setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0));
+    setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0)); setMissionRun((value) => value + 1);
     setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(false); setCountdown(3); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
   };
 
@@ -1345,6 +1378,7 @@ export default function Home() {
     engineRef.current?.setBoost(false);
     setActiveEvents(pickStageEvents(nextStage));
     setActiveRoute(pickRouteChallenge(nextStage));
+    setMissionRun((value) => value + 1);
     setStageIndex(nextStage);
     setEventIndex(0);
     setIsRoute(false);

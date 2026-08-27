@@ -17,6 +17,8 @@ type LeaderEntry = { id: number; player_name: string; score: number; fragments: 
 type StageEnding = { world: string; code: string; title: string; line: string; lost: number; recovered: number; endFragments: number };
 type StageReview = StageEnding & { stageScore: number; totalScore: number; startFragments: number; story: string };
 type ArcadeKind = "orb" | "hazard" | "dodge";
+type SoundCue = "start" | "move" | "collect" | "dodge" | "hit" | "boost" | "clear" | "fail";
+type GameAudio = { ctx: AudioContext; master: GainNode; music: GainNode; fx: GainNode; timer: number | null; step: number };
 
 type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
@@ -34,7 +36,7 @@ const E = (type: EventKind, kicker: string, prompt: string, options: [Option, Op
 
 const stages: Stage[] = [
   {
-    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.8, color: "#dff9ff", accent: "#00b895",
+    name: "내 방", place: "휴대폰 → 공유기", distance: "12 m", payload: "문자", payloadSize: "4 KB", courseSeconds: 2.1, color: "#dff9ff", accent: "#00b895",
     story: "첫 번째 임무는 친구에게 생일 축하 문자를 보내는 일이다. 픽셀은 4 KB 문자 조각 100개를 품고 공유기를 향해 달린다.",
     friendReply: "문자 잘 받았어! 멀리서도 먼저 축하해 줘서 고마워.",
     lesson: "가까운 거리도 벽과 전자기기의 간섭을 받는다.",
@@ -45,7 +47,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "도시", place: "광케이블 → 교환기", distance: "28 km", payload: "이미지", payloadSize: "5 MB", courseSeconds: 3.2, color: "#f0ebff", accent: "#7d55d9",
+    name: "도시", place: "광케이블 → 교환기", distance: "28 km", payload: "이미지", payloadSize: "5 MB", courseSeconds: 2.8, color: "#f0ebff", accent: "#7d55d9",
     story: "두 번째 임무는 함께 찍은 생일 사진을 보내는 일이다. 새로 준비한 5 MB 이미지 조각 100개가 도시 광케이블로 출발한다.",
     friendReply: "우리 함께 찍은 사진이다! 화면도 선명하게 잘 보여.",
     lesson: "빠른 회선도 사용자가 몰리면 대역폭 병목이 생긴다.",
@@ -56,7 +58,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.6, color: "#e7f5ff", accent: "#1688d4",
+    name: "데이터센터", place: "서버 보관 → 복제", distance: "1,420 km", payload: "음성", payloadSize: "25 MB", courseSeconds: 3.5, color: "#e7f5ff", accent: "#1688d4",
     story: "세 번째 임무는 직접 녹음한 축하 음성을 보내는 일이다. 새로 출발한 25 MB 음성 조각은 서버 사본의 도움을 받을 수 있다.",
     friendReply: "목소리가 또렷하게 들려! 바로 옆에서 말하는 것 같아.",
     lesson: "서버 복제와 캐시는 잃은 정보를 다시 보낼 수 있게 한다.",
@@ -67,7 +69,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "바다", place: "해저 케이블", distance: "10,248 km", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4, color: "#dff7ff", accent: "#009bc2",
+    name: "바다", place: "해저 케이블", distance: "10,248 km", payload: "동영상", payloadSize: "180 MB", courseSeconds: 4.2, color: "#dff7ff", accent: "#009bc2",
     story: "네 번째 임무는 생일 영상 편지를 보내는 일이다. 새로 준비한 180 MB 동영상 조각은 1만 km 해저 케이블을 건넌다.",
     friendReply: "영상 편지가 끝까지 재생됐어. 바다 밑으로 왔다니 놀라워!",
     lesson: "국제 인터넷의 대부분은 해저 케이블을 지나며 중계기가 약해진 빛을 되살린다.",
@@ -79,7 +81,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "하늘", place: "위성 중계", distance: "35,786 km", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 4.4, color: "#f5ecff", accent: "#b044b6",
+    name: "하늘", place: "위성 중계", distance: "35,786 km", payload: "대용량 데이터", payloadSize: "1.2 GB", courseSeconds: 5, color: "#f5ecff", accent: "#b044b6",
     story: "다섯 번째 임무는 추억을 모은 1.2 GB 대용량 파일을 보내는 일이다. 새 데이터 조각 100개가 폭우와 긴 위성 경로에 도전한다.",
     friendReply: "추억 파일을 전부 열었어! 사진과 영상이 정말 많다.",
     lesson: "위성은 멀리 돌아가며 거리와 날씨, 안테나 각도의 영향을 받는다.",
@@ -91,7 +93,7 @@ const stages: Stage[] = [
     ],
   },
   {
-    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 4.8, color: "#f1ffdf", accent: "#6c9f00",
+    name: "친구 동네", place: "기지국 → 친구 폰", distance: "2.6 km", payload: "실시간 스트리밍", payloadSize: "LIVE · 계속 증가", courseSeconds: 5.8, color: "#f1ffdf", accent: "#6c9f00",
     story: "마지막 임무는 친구와 실시간 생일 영상 통화를 연결하는 일이다. 저장 파일과 달리 데이터가 계속 생기므로 끊김 없는 전송이 중요하다.",
     friendReply: "화면도 소리도 잘 들려! 이제 우리 실시간으로 함께 축하하자.",
     lesson: "마지막 연결과 재전송이 친구가 받는 영상의 완성도를 결정한다.",
@@ -103,6 +105,15 @@ const stages: Stage[] = [
       E("attenuation", "마지막 버퍼", "끊김 없이 재생할 버퍼 전략은?", [O("버퍼 없음", "조금만 흔들려도 재생이 끊겼다", -18), O("짧은 버퍼", "지연과 안정성을 균형 있게 지켰다", 6), O("너무 긴 버퍼", "도착은 안정적이지만 지연 중 일부가 빠졌다", -7)]),
     ],
   },
+];
+
+const dataPaces = [
+  "초경량 · 가장 짧은 코스",
+  "가벼움 · 짧은 코스",
+  "보통 · 중간 코스",
+  "큼 · 긴 코스",
+  "매우 큼 · 매우 긴 코스",
+  "계속 생성 · 가장 긴 코스",
 ];
 
 const stageEndings = [
@@ -138,6 +149,73 @@ const pointsFor = (delta: number, kind: EventKind) => {
   if (delta === 0) return 45;
   return -Math.min(90, 30 + Math.abs(delta) * 3);
 };
+
+function createGameAudio(): GameAudio {
+  const ctx = new AudioContext();
+  const master = ctx.createGain();
+  const music = ctx.createGain();
+  const fx = ctx.createGain();
+  master.gain.value = .62;
+  music.gain.value = .085;
+  fx.gain.value = .2;
+  music.connect(master); fx.connect(master); master.connect(ctx.destination);
+  return { ctx, master, music, fx, timer: null, step: 0 };
+}
+
+function soundTone(audio: GameAudio, target: GainNode, frequency: number, duration: number, type: OscillatorType = "sine", volume = .35, endFrequency?: number) {
+  const now = audio.ctx.currentTime;
+  const oscillator = audio.ctx.createOscillator();
+  const gain = audio.ctx.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(Math.max(40, frequency), now);
+  if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(40, endFrequency), now + duration);
+  gain.gain.setValueAtTime(.0001, now);
+  gain.gain.exponentialRampToValueAtTime(Math.max(.001, volume), now + .012);
+  gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+  oscillator.connect(gain); gain.connect(target);
+  oscillator.start(now); oscillator.stop(now + duration + .02);
+}
+
+function stopGameMusic(audio: GameAudio | null) {
+  if (!audio?.timer) return;
+  window.clearInterval(audio.timer);
+  audio.timer = null;
+}
+
+function startGameMusic(audio: GameAudio, level: number) {
+  stopGameMusic(audio);
+  audio.step = 0;
+  const scales = [
+    [262, 330, 392, 523],
+    [294, 370, 440, 587],
+    [330, 392, 494, 659],
+    [349, 440, 523, 698],
+    [392, 494, 587, 784],
+    [440, 523, 659, 880],
+  ];
+  const scale = scales[Math.max(0, Math.min(5, level - 1))];
+  const tick = () => {
+    const note = scale[audio.step % scale.length];
+    soundTone(audio, audio.music, note, .15, "triangle", .24);
+    if (audio.step % 2 === 0) soundTone(audio, audio.music, note / 2, .21, "sine", .32);
+    if (audio.step % 4 === 3) soundTone(audio, audio.music, note * 1.5, .1, "square", .07);
+    audio.step += 1;
+  };
+  tick();
+  audio.timer = window.setInterval(tick, Math.max(190, 300 - level * 16));
+}
+
+function playGameFx(audio: GameAudio | null, cue: SoundCue) {
+  if (!audio) return;
+  if (cue === "move") soundTone(audio, audio.fx, 430, .07, "triangle", .16, 620);
+  if (cue === "collect") { soundTone(audio, audio.fx, 660, .11, "sine", .28, 990); window.setTimeout(() => soundTone(audio, audio.fx, 990, .12, "sine", .2, 1320), 55); }
+  if (cue === "dodge") soundTone(audio, audio.fx, 520, .09, "triangle", .19, 780);
+  if (cue === "hit") { soundTone(audio, audio.fx, 150, .2, "sawtooth", .34, 62); soundTone(audio, audio.fx, 90, .24, "square", .12); }
+  if (cue === "boost") { soundTone(audio, audio.fx, 180, .42, "sawtooth", .22, 1200); soundTone(audio, audio.fx, 420, .35, "triangle", .2, 1500); }
+  if (cue === "clear") [523, 659, 784, 1047].forEach((note, index) => window.setTimeout(() => soundTone(audio, audio.fx, note, .22, "triangle", .3), index * 90));
+  if (cue === "fail") { soundTone(audio, audio.fx, 330, .35, "sawtooth", .28, 110); window.setTimeout(() => soundTone(audio, audio.fx, 110, .45, "square", .18, 55), 180); }
+  if (cue === "start") [262, 392, 523].forEach((note, index) => window.setTimeout(() => soundTone(audio, audio.fx, note, .2, "triangle", .26), index * 70));
+}
 
 function buildJourneyNovel(decisions: DecisionRecord[], stats: StageStat[], fragments: number) {
   const traveledWorlds = stages.slice(0, Math.max(1, stats.length));
@@ -312,6 +390,8 @@ function addLaneObject(container: THREE.Group, kind: EventKind, accent: string, 
 export default function Home() {
   const mountRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
+  const audioRef = useRef<GameAudio | null>(null);
+  const soundOnRef = useRef(true);
   const resolveRef = useRef<() => void>(() => {});
   const laneRef = useRef<Lane>(1);
   const fragmentsRef = useRef(100);
@@ -355,6 +435,7 @@ export default function Home() {
   const [boostCharge, setBoostCharge] = useState(0);
   const [boostActive, setBoostActive] = useState(false);
   const [motionReduced, setMotionReduced] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
   const [lostTotal, setLostTotal] = useState(0);
   const [recoveredTotal, setRecoveredTotal] = useState(0);
   const [stats, setStats] = useState<StageStat[]>([]);
@@ -385,10 +466,36 @@ export default function Home() {
   useEffect(() => { void loadLeaderboard(); }, [loadLeaderboard]);
 
   useEffect(() => { motionReducedRef.current = motionReduced; }, [motionReduced]);
+  const ensureAudio = useCallback(() => {
+    if (!audioRef.current) audioRef.current = createGameAudio();
+    void audioRef.current.ctx.resume();
+    return audioRef.current;
+  }, []);
+  const playFx = useCallback((cue: SoundCue) => {
+    if (!soundOnRef.current) return;
+    playGameFx(audioRef.current, cue);
+  }, []);
+  const changeSound = useCallback((active: boolean) => {
+    soundOnRef.current = active;
+    setSoundOn(active);
+    const audio = active ? ensureAudio() : audioRef.current;
+    if (!audio) return;
+    audio.master.gain.setTargetAtTime(active ? .62 : .0001, audio.ctx.currentTime, .02);
+    if (!active) stopGameMusic(audio);
+    else if (screen === "playing" && !stageReview) startGameMusic(audio, stageIndex + 1);
+  }, [ensureAudio, screen, stageIndex, stageReview]);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (screen === "playing" && soundOn && !stageReview) startGameMusic(audio, stageIndex + 1);
+    else stopGameMusic(audio);
+  }, [screen, soundOn, stageIndex, stageReview]);
   useEffect(() => () => {
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
+    stopGameMusic(audioRef.current);
+    void audioRef.current?.ctx.close();
   }, []);
 
   const stage = stages[stageIndex];
@@ -411,29 +518,32 @@ export default function Home() {
     setFragments(0); setCombo(0); setOutcome(null); setArcadeToast(null); setGameEffect("hit");
     setStageEnding({ world: stage.name, code: "SIGNAL LOST", title: "전송이 완전히 끊겼다", line: `${stage.payload} 데이터가 0개가 되어 ${stage.name}에서 여정이 멈췄다.`, lost: completed.lost, recovered: completed.recovered, endFragments: 0 });
     setRadio("루미: “남은 데이터가 0이야. 이번 전송은 여기서 끝났어.”");
+    playFx("fail");
     nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 1100);
-  }, [stage.name, stage.payload]);
+  }, [playFx, stage.name, stage.payload]);
 
   const move = useCallback((direction: -1 | 1) => {
-    if (terminatingRef.current) return;
+    if (terminatingRef.current || reviewingRef.current) return;
     const next = Math.max(0, Math.min(2, laneRef.current + direction)) as Lane;
     if (next === laneRef.current) return;
     laneRef.current = next;
     engineRef.current?.setLane(next);
+    playFx("move");
     setGameEffect("dash"); window.setTimeout(() => setGameEffect(""), 160);
-  }, []);
+  }, [playFx]);
 
   const activateBoost = useCallback(() => {
     if (screen !== "playing" || terminatingRef.current || reviewingRef.current || boostActiveRef.current || boostRef.current < 100) return;
     boostRef.current = 0; boostActiveRef.current = true;
     setBoostCharge(0); setBoostActive(true); setGameEffect("boost");
+    playFx("boost");
     engineRef.current?.setBoost(true); engineRef.current?.triggerEffect(1, stage.accent);
     window.setTimeout(() => setGameEffect(""), 450);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
     boostTimerRef.current = window.setTimeout(() => {
       boostActiveRef.current = false; setBoostActive(false); engineRef.current?.setBoost(false);
     }, 2800);
-  }, [screen, stage.accent]);
+  }, [playFx, screen, stage.accent]);
 
   const resolveArcade = useCallback((kind: ArcadeKind) => {
     if (screen !== "playing" || terminatingRef.current) return;
@@ -443,6 +553,7 @@ export default function Home() {
       boostRef.current = Math.min(100, boostRef.current + 6);
       setScore(scoreRef.current); setCombo(comboRef.current); setBoostCharge(boostRef.current);
       setArcadeToast({ kind, text: `${boostActiveRef.current ? "+40" : "+20"} · ${arcadeNames[stageIndex].orb}` });
+      playFx("collect");
       engineRef.current?.triggerEffect(1, stage.accent);
     } else if (kind === "hazard") {
       const damage = boostActiveRef.current ? 3 : 4;
@@ -454,6 +565,7 @@ export default function Home() {
       stageLostRef.current += applied;
       setFragments(nextFragments); setScore(scoreRef.current); setCombo(0); setLostTotal((value) => value + applied);
       setGameEffect("hit"); setArcadeToast({ kind, text: `−40 · ${arcadeNames[stageIndex].hazard} · 조각 −${applied}` });
+      playFx("hit");
       engineRef.current?.triggerEffect(-4, stage.accent);
       window.setTimeout(() => setGameEffect(""), 300);
       if (nextFragments === 0) terminateAtZero();
@@ -462,10 +574,11 @@ export default function Home() {
       comboRef.current = Math.min(9, comboRef.current + 1);
       setScore(scoreRef.current); setCombo(comboRef.current);
       setArcadeToast({ kind, text: `${boostActiveRef.current ? "+30" : "+15"} · ${arcadeNames[stageIndex].hazard} 회피` });
+      playFx("dodge");
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [screen, stage.accent, stageIndex, terminateAtZero]);
+  }, [playFx, screen, stage.accent, stageIndex, terminateAtZero]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 
@@ -912,6 +1025,7 @@ export default function Home() {
       decisionsRef.current = [...decisionsRef.current, record];
       setDecisions(decisionsRef.current);
       setOutcome({ delta: applied, points: earnedPoints, combo: comboRef.current, text: `${option.label} · ${option.detail}` });
+      playFx(applied < 0 ? "hit" : "collect");
       engineRef.current?.triggerEffect(1, stage.accent);
       setGameEffect("boost"); window.setTimeout(() => setGameEffect(""), 360);
       setRadio(`픽셀: “${option.label}로 친구의 폰까지 마무리할게!”`);
@@ -922,6 +1036,7 @@ export default function Home() {
         const ending = stageEndings[stageIndex];
         reviewingRef.current = true;
         engineRef.current?.setPaused(true);
+        playFx("clear");
         setStageReview({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments, startFragments: completed.start, stageScore: scoreRef.current - stageScoreStartRef.current, totalScore: scoreRef.current, story: stage.story });
         setRadio(`픽셀: “${ending.title}. 기록을 확인하면 다음 데이터로 갈 수 있어!”`);
       }, 420);
@@ -955,6 +1070,7 @@ export default function Home() {
     decisionsRef.current = [...decisionsRef.current, record];
     setDecisions(decisionsRef.current);
     setOutcome({ delta: applied, points: earnedPoints, combo: nextCombo, text: option.detail });
+    playFx(applied < 0 ? "hit" : applied > 0 ? "collect" : "dodge");
     engineRef.current?.triggerEffect(delta, stage.accent);
     setGameEffect(delta < 0 ? "hit" : "boost"); window.setTimeout(() => setGameEffect(""), 360);
     setRadio(applied < 0 ? `픽셀: “조각이 흩어졌어! ${option.detail}.”` : applied > 0 ? `루미: “좋아, ${option.detail}.”` : `픽셀: “${option.detail}. 계속 달리자!”`);
@@ -974,16 +1090,18 @@ export default function Home() {
           const ending = stageEndings[stageIndex];
           reviewingRef.current = true;
           engineRef.current?.setPaused(true);
+          playFx("clear");
           setStageReview({ world: stage.name, ...ending, lost: completed.lost, recovered: completed.recovered, endFragments: nextFragments, startFragments: completed.start, stageScore: scoreRef.current - stageScoreStartRef.current, totalScore: scoreRef.current, story: stage.story });
           setRadio(`픽셀: “${ending.title}. 마지막 기록을 확인해 줘!”`);
         }
       }
     }, 280);
-  }, [challenge, eventIndex, finishStage, isRoute, screen, stage.events.length, stageIndex, terminateAtZero]);
+  }, [challenge, eventIndex, finishStage, isRoute, playFx, screen, stage.events.length, stageIndex, terminateAtZero]);
 
   useEffect(() => { resolveRef.current = resolveChallenge; }, [resolveChallenge]);
 
   const startGame = () => {
+    if (soundOnRef.current) { ensureAudio(); playGameFx(audioRef.current, "start"); }
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
     laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
@@ -1024,6 +1142,7 @@ export default function Home() {
     setChapterFlash(true);
     setRadio(stages[nextStage].story);
     engineRef.current?.setPaused(false);
+    playFx("start");
     window.setTimeout(() => setChapterFlash(false), 650);
   };
 
@@ -1049,6 +1168,7 @@ export default function Home() {
       strongest ? { label: "가장 좋은 판단", title: `${strongest.stage} · ${strongest.choice}`, text: `${strongest.detail}. 조건을 읽고 전송에 유리한 길을 찾았습니다.` } : null,
       riskiest ? { label: "다시 생각할 판단", title: `${riskiest.stage} · ${riskiest.choice}`, text: `${riskiest.detail}. 다음에는 거리·간섭·혼잡 중 무엇이 원인이었는지 먼저 확인해 보세요.` } : null,
       { label: "경로 전략", title: fastRoutes > safeRoutes ? "속도를 우선한 주행" : safeRoutes > fastRoutes ? "안전을 우선한 주행" : "균형을 택한 주행", text: `빠른 길 ${fastRoutes}회, 안전한 길 ${safeRoutes}회였습니다. 조각이 많을 때는 짧은 길, 위태로울 때는 회복 기회가 많은 길이 유리합니다.` },
+      { label: "데이터 크기", title: "같은 길도 보낼 양이 다르다", text: "문자는 적은 조각이라 빨리 끝났고, 동영상과 실시간 스트리밍은 보낼 조각이 많아 오래 달렸습니다. 실제 물리적 거리가 짧아진 것이 아니라 전송해야 할 데이터량이 달라진 것입니다." },
       { label: "다음 도전", title: worstStage ? `${worstStage.name}에서 손실 줄이기` : "조건을 끝까지 관찰하기", text: worstStage ? `${worstStage.name}에서 ${worstStage.lost}개를 잃었습니다. 이 세계의 표지판에서 감쇠·간섭·대역폭 조건을 다시 비교해 보세요.` : "각 표지판의 조건을 끝까지 읽고 경로를 선택해 보세요." },
     ].filter(Boolean) as { label: string; title: string; text: string }[];
   }, [decisions, worstStage]);
@@ -1076,7 +1196,7 @@ export default function Home() {
       onPointerUp={(event) => { if (screen !== "playing" || stageReview || pointerStartRef.current === null) return; const delta = event.clientX - pointerStartRef.current; if (Math.abs(delta) > 34) move(delta > 0 ? 1 : -1); pointerStartRef.current = null; }}>
 
       {screen === "intro" && <section className="story-intro">
-        <header className="story-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div></header>
+        <header className="story-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>A THREE.JS STORY RUNNER</small></div><label className="sound-toggle"><span>{soundOn ? "사운드 ON" : "사운드 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label></header>
         <div className="intro-story-copy">
           <div className="fight-title" aria-label="시그널 러시, 픽셀 대 전파 방해">
             <div className="title-burst" aria-hidden="true"><i /><i /><i /><i /><i /></div>
@@ -1085,12 +1205,12 @@ export default function Home() {
             <strong>시그널 러시</strong>
           </div>
           <p className="mission-tag">MISSION · 여섯 번의 전송을 모두 성공시켜라</p>
-          <p>먼 곳의 친구에게 먼저 문자를 보냅니다. 친구가 잘 받으면 첫 스테이지를 클리어하고, 다음에는 사진을 새로 보냅니다. 매 스테이지는 데이터 조각 100개로 다시 시작하며 데이터가 커질수록 코스가 길고 빨라집니다.</p>
+          <p>먼 곳의 친구에게 먼저 문자를 보냅니다. 친구가 잘 받으면 첫 스테이지를 클리어하고, 다음에는 사진을 새로 보냅니다. 실제 통신 경로의 거리는 같아도 데이터가 클수록 보내야 할 조각이 많아집니다. 게임에서는 이를 더 길고 빠른 코스로 체험합니다.</p>
           <button className="battle-start" onClick={startGame}><b>전송 배틀 시작</b><span>RUSH →</span></button>
           <small>방향키·A/D·스와이프로 이동 · 스페이스바로 충전된 부스트 사용</small>
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/hero-pixel.png" alt="메시지 봉투를 들고 달리는 귀여운 전송 요정 픽셀" /><div className="pixel-speech"><b>픽셀</b><span>“한 번에 하나씩, 친구에게 꼭 전할게!”</span></div></div>
-        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>{item.payloadSize} · 새 데이터 100조각</small></div>)}</div>
+        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>{item.payloadSize} · {dataPaces[index]}</small></div>)}</div>
         <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 평균 도착률 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
@@ -1100,13 +1220,13 @@ export default function Home() {
         <header className="live-topbar">
           <div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>시그널 러시</b><small>PIXEL IS RUNNING</small></div></div>
           <div className="world-status"><small>CHAPTER {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><b>{stage.payload}</b><span>{stage.name} · {stage.place} · {stage.distance}</span></div>
-          <label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label>
+          <div className="live-settings"><label className="sound-toggle"><span>{soundOn ? "소리 ON" : "소리 OFF"}</span><Switch checked={soundOn} onCheckedChange={changeSound} aria-label="배경음악과 효과음 켜기 또는 끄기" /></label><label className="live-motion"><span>흔들림 줄이기</span><Switch checked={motionReduced} onCheckedChange={setMotionReduced} aria-label="화면 흔들림 줄이기" /></label></div>
         </header>
-        <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>관문당 {stage.courseSeconds.toFixed(1)}초</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
+        <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>{dataPaces[stageIndex]}</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
         <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div></div>
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
-        <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>하나의 스테이지가 멈추지 않고 이어집니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
-        {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize}</small><strong>{stage.payload}</strong><span>{stage.story}</span></div>}
+        <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
+        {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize} · {dataPaces[stageIndex]}</small><strong>{stage.payload}</strong><span>{stage.story}</span></div>}
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1} ${stageEnding.code === "SIGNAL LOST" ? "ending-fail" : ""}`}><div className="ending-energy"><i /><i /><i /></div><small>{stageEnding.code === "SIGNAL LOST" ? "TRANSMISSION TERMINATED" : `CHAPTER ${String(stageIndex + 1).padStart(2, "0")} CLEAR`} · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}

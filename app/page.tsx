@@ -1340,11 +1340,10 @@ export default function Home() {
     setEventIndex(0);
     setIsRoute(false);
     setProgress(0);
-    setChapterFlash(true);
+    setChapterFlash(false);
+    setCountdown(3);
     setRadio(stages[nextStage].story);
-    engineRef.current?.setPaused(false);
-    playFx("start");
-    window.setTimeout(() => setChapterFlash(false), 650);
+    engineRef.current?.setPaused(true);
   };
 
   const averageArrival = useMemo(() => stats.length ? Math.round(stats.reduce((sum, item) => sum + item.end, 0) / stats.length) : fragments, [fragments, stats]);

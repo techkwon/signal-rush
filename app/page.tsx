@@ -69,6 +69,7 @@ const stages: Stage[] = [
 const eventNames: Record<TrackEvent["type"], string> = { gate: "갈림 게이트", hazard: "피해야 할 것", attenuation: "감쇠 구간", booster: "부스터", bottleneck: "좁은 관문", recovery: "복구 지점" };
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const routeLabel = (route: RouteMode) => route === "fast" ? "빠른 길" : route === "safe" ? "안전한 길" : "기본 경로";
+const eventAsset = (type: TrackEvent["type"]) => type === "hazard" || type === "bottleneck" ? "/game/interference-cluster.png" : "/game/relay-booster.png";
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("intro");
@@ -88,9 +89,11 @@ export default function Home() {
   const stageLost = useRef(0);
   const stageRecovered = useRef(0);
   const resolved = useRef(false);
+  const laneRef = useRef<Lane>(1);
+  const fragmentsRef = useRef(100);
   const stage = stages[stageIndex];
   const currentEvent = stage.events[eventIndex];
-  const effectiveDuration = route === "fast" ? 3300 : route === "safe" ? 5000 : 4200;
+  const effectiveDuration = route === "fast" ? 5000 : route === "safe" ? 8000 : 6500;
 
   const adjustedDelta = useCallback((raw: number) => {
     if (route === "fast") return raw < 0 ? Math.round(raw * 1.25) : Math.round(raw * .8);
@@ -101,12 +104,14 @@ export default function Home() {
   const finishEvent = useCallback(() => {
     if (resolved.current || screen !== "playing") return;
     resolved.current = true;
-    const choice = currentEvent.options[lane];
+    const choice = currentEvent.options[laneRef.current];
     const delta = adjustedDelta(choice.delta);
-    const nextFragments = clamp(fragments + delta);
-    const applied = nextFragments - fragments;
+    const currentFragments = fragmentsRef.current;
+    const nextFragments = clamp(currentFragments + delta);
+    const applied = nextFragments - currentFragments;
     if (applied < 0) { setLostTotal(v => v + Math.abs(applied)); stageLost.current += Math.abs(applied); }
     else if (applied > 0) { setRecoveredTotal(v => v + applied); stageRecovered.current += applied; }
+    fragmentsRef.current = nextFragments;
     setFragments(nextFragments);
     setLastChoice(choice.label);
     setFlash({ delta: applied, label: choice.detail });
@@ -118,8 +123,8 @@ export default function Home() {
         setStats(prev => [...prev, { name: stage.name, start: stageStart.current, end: nextFragments, lost: stageLost.current, recovered: stageRecovered.current, route }]);
         setScreen(stageIndex === stages.length - 1 ? "result" : "route");
       }
-    }, motionReduced ? 350 : 650);
-  }, [adjustedDelta, currentEvent, eventIndex, fragments, lane, motionReduced, route, screen, stage.events.length, stage.name, stageIndex]);
+    }, motionReduced ? 850 : 1150);
+  }, [adjustedDelta, currentEvent, eventIndex, motionReduced, route, screen, stage.events.length, stage.name, stageIndex]);
 
   useEffect(() => {
     if (screen !== "playing") return;
@@ -132,7 +137,11 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [effectiveDuration, eventIndex, finishEvent, screen]);
 
-  const move = useCallback((direction: -1 | 1) => setLane(current => clamp(current + direction) as Lane), []);
+  const move = useCallback((direction: -1 | 1) => setLane(current => {
+    const next = clamp(current + direction) as Lane;
+    laneRef.current = next;
+    return next;
+  }), []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (screen !== "playing") return;
@@ -146,12 +155,17 @@ export default function Home() {
   const startStage = () => {
     const entryLoss = route === "fast" ? 3 : route === "safe" ? 8 : 0;
     stageStart.current = fragments; stageLost.current = entryLoss; stageRecovered.current = 0;
-    if (entryLoss) { setFragments(v => clamp(v - entryLoss)); setLostTotal(v => v + entryLoss); }
-    setEventIndex(0); setLane(1); setProgress(100); resolved.current = false; setScreen("playing");
+    if (entryLoss) {
+      const next = clamp(fragmentsRef.current - entryLoss);
+      fragmentsRef.current = next;
+      setFragments(next);
+      setLostTotal(v => v + entryLoss);
+    }
+    setEventIndex(0); laneRef.current = 1; setLane(1); setProgress(100); resolved.current = false; setScreen("playing");
   };
   const chooseRoute = (choice: RouteMode) => { setRoute(choice); setStageIndex(v => v + 1); setScreen("stageIntro"); };
   const restart = () => {
-    setScreen("intro"); setStageIndex(0); setEventIndex(0); setLane(1); setFragments(100); setProgress(100); setRoute("balanced"); setStats([]); setLostTotal(0); setRecoveredTotal(0); setFlash(null); setLastChoice("");
+    setScreen("intro"); setStageIndex(0); setEventIndex(0); laneRef.current = 1; setLane(1); fragmentsRef.current = 100; setFragments(100); setProgress(100); setRoute("balanced"); setStats([]); setLostTotal(0); setRecoveredTotal(0); setFlash(null); setLastChoice("");
     stageStart.current = 100; stageLost.current = 0; stageRecovered.current = 0; resolved.current = false;
   };
   const grade = useMemo(() => {
@@ -189,18 +203,18 @@ export default function Home() {
 
       {screen === "playing" && <section className={`runner-screen ${flash && flash.delta < 0 ? "impact" : ""}`}>
         <div className="hud"><div className="hud-chapter"><span>{stage.emoji}</span><div><small>CH {stageIndex + 1} · {stage.place}</small><strong>{stage.name}</strong></div></div><div className="fragment-meter"><div><span>도착 중인 정보</span><strong>{fragments}<small>/100 조각</small></strong></div><div className="meter-track"><i style={{ width: `${fragments}%` }} /></div></div><div className="route-mini"><small>현재 경로</small><strong>{routeLabel(route)}</strong></div></div>
-        <div className="event-banner"><span>{eventNames[currentEvent.type]} · {eventIndex + 1}/{stage.events.length}</span><strong>{currentEvent.prompt}</strong><div className="decision-timer"><i style={{ width: `${progress}%` }} /></div></div>
+        <div className="event-banner"><span>{eventNames[currentEvent.type]} · 상황을 읽고 판단하세요</span><strong>{currentEvent.prompt}</strong><small>효과는 통과한 뒤에 공개됩니다</small><div className="decision-timer"><i style={{ width: `${progress}%` }} /></div></div>
         <div className="runner-viewport"><div className="world-label">{stage.emoji} {currentEvent.kicker}</div><div className="horizon-glow" /><div className="track-grid"><div className="center-line one" /><div className="center-line two" /></div>
-          <div className="gate-row" style={{ "--approach": `${progress}` } as React.CSSProperties}>{currentEvent.options.map((option, index) => <div key={option.label} className={`gate-card ${lane === index ? "selected" : ""} ${option.delta > 0 ? "positive" : option.delta < 0 ? "negative" : "neutral"}`}><span>{option.delta > 0 ? `+${option.delta}` : option.delta === 0 ? "통과" : option.delta}</span><strong>{option.label}</strong><small>{option.detail}</small></div>)}</div>
-          <div className={`signal-runner lane-${lane}`}><i /><span>영상 편지</span></div>{flash && <div className={`result-flash ${flash.delta >= 0 ? "good" : "bad"}`}><strong>{flash.delta > 0 ? `+${flash.delta}` : flash.delta === 0 ? "안전 통과" : flash.delta}</strong><span>{flash.label} · {lastChoice}</span></div>}
+          <div className="gate-row" style={{ "--approach": `${progress}` } as React.CSSProperties}>{currentEvent.options.map((option, index) => <div key={option.label} className={`gate-card ${lane === index ? "selected" : ""}`}><div className="choice-formation"><img src={eventAsset(currentEvent.type)} alt="" /><i /><i /><i /></div><strong>{option.label}</strong><small>결과 비공개</small></div>)}</div>
+          <div className={`signal-runner lane-${lane}`}><img src="/game/packet-squad.png" alt="영상 편지를 나르는 데이터 조각 팀" /><span>영상 편지</span></div>{flash && <div className={`result-flash ${flash.delta >= 0 ? "good" : "bad"}`}><strong>{flash.delta > 0 ? `+${flash.delta}` : flash.delta === 0 ? "안전 통과" : flash.delta}</strong><span>{flash.label} · {lastChoice}</span></div>}
         </div>
         <div className="runner-controls"><button onClick={() => move(-1)} disabled={lane === 0} aria-label="왼쪽으로 이동">←<span>왼쪽</span></button><p>빛나는 정보 덩어리를<br /><strong>원하는 통로로 이동</strong></p><button onClick={() => move(1)} disabled={lane === 2} aria-label="오른쪽으로 이동"><span>오른쪽</span>→</button></div>
       </section>}
 
       {screen === "route" && <section className="route-screen">
         <div className="route-context"><span>{stage.emoji} CHAPTER {stageIndex + 1} 통과</span><strong>{fragments}개의 정보 조각이 남았다.</strong><p>{stageIndex === 2 ? "바다 앞이다. 케이블은 짧고 곧지만 어선이 많다." : `${stages[stageIndex + 1].name}로 향하는 두 경로가 열렸다. 지금 가진 조각을 보고 판단하자.`}</p></div><h1>다음 경로를 선택하세요</h1>
-        <div className="route-cards"><button className="route-card fast" onClick={() => chooseRoute("fast")}><div className="route-icon">⚡</div><span>FAST ROUTE</span><h2>빠른 길</h2><p>거리가 짧아 진입 감쇠는 적지만, 판단 시간이 짧고 충돌 피해가 커집니다.</p><ul><li><b>−3</b> 진입 감쇠</li><li><b>3.3초</b> 판단 시간</li><li><b>×1.25</b> 장애물 피해</li></ul><em>조각이 넉넉할 때 유리 →</em></button>
-          <button className="route-card safe" onClick={() => chooseRoute("safe")}><div className="route-icon">🛡️</div><span>SAFE ROUTE</span><h2>안전한 길</h2><p>멀리 돌아 진입 감쇠는 크지만, 중계기가 많고 장애물 피해가 작습니다.</p><ul><li><b>−8</b> 진입 감쇠</li><li><b>5초</b> 판단 시간</li><li><b>×1.2</b> 회복 효과</li></ul><em>조각이 위태로울 때 유리 →</em></button></div><p className="route-hint">정답은 하나가 아닙니다. 현재 정보량과 다음 세계의 성격을 함께 보세요.</p>
+        <div className="route-cards"><button className="route-card fast" onClick={() => chooseRoute("fast")}><div className="route-icon">⚡</div><span>FAST ROUTE</span><h2>빠른 길</h2><p>거리가 짧아 진입 감쇠는 적지만, 판단 시간이 짧고 충돌 피해가 커집니다.</p><ul><li><b>−3</b> 진입 감쇠</li><li><b>5초</b> 판단 시간</li><li><b>×1.25</b> 장애물 피해</li></ul><em>조각이 넉넉할 때 유리 →</em></button>
+          <button className="route-card safe" onClick={() => chooseRoute("safe")}><div className="route-icon">🛡️</div><span>SAFE ROUTE</span><h2>안전한 길</h2><p>멀리 돌아 진입 감쇠는 크지만, 중계기가 많고 장애물 피해가 작습니다.</p><ul><li><b>−8</b> 진입 감쇠</li><li><b>8초</b> 판단 시간</li><li><b>×1.2</b> 회복 효과</li></ul><em>조각이 위태로울 때 유리 →</em></button></div><p className="route-hint">정답은 하나가 아닙니다. 현재 정보량과 다음 세계의 성격을 함께 보세요.</p>
       </section>}
 
       {screen === "result" && <section className="result-screen">

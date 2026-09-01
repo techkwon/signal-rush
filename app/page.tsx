@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Switch } from "@/components/ui/switch";
+import { badEndings, stageDifficulties } from "@/lib/game-balance";
 
 type Lane = 0 | 1 | 2;
 type RouteMode = "fast" | "balanced" | "safe";
@@ -20,6 +21,12 @@ type ArcadeItemKind = "orb" | "hazard" | "shield" | "repair" | "burst" | "cache"
 type ArcadeKind = ArcadeItemKind | "dodge";
 type SoundCue = "start" | "move" | "collect" | "dodge" | "hit" | "boost" | "clear" | "fail";
 type GameAudio = { ctx: AudioContext; master: GainNode; music: GainNode; fx: GainNode; timer: number | null; step: number };
+
+declare global {
+  interface Window {
+    render_game_to_text?: () => string;
+  }
+}
 
 type Engine = {
   spawnChallenge: (challenge: Challenge, accent: string, speed: number) => void;
@@ -543,6 +550,7 @@ export default function Home() {
   const [outcome, setOutcome] = useState<{ delta: number; points: number; combo: number; text: string } | null>(null);
   const [chapterFlash, setChapterFlash] = useState(false);
   const [stageEnding, setStageEnding] = useState<StageEnding | null>(null);
+  const [failedStageIndex, setFailedStageIndex] = useState<number | null>(null);
   const [stageReview, setStageReview] = useState<StageReview | null>(null);
   const [combo, setCombo] = useState(0);
   const [gameEffect, setGameEffect] = useState<"" | "boost" | "hit" | "dash">("");
@@ -632,17 +640,37 @@ export default function Home() {
   }, []);
 
   const stage = stages[stageIndex];
+  const difficulty = stageDifficulties[stageIndex];
   const challenge = (isRoute ? activeRoute : activeEvents[eventIndex]) ?? activeEvents[0] ?? homePools[stageIndex][0];
   const courseTotal = activeEvents.length + 1;
   const courseIndex = isRoute ? activeEvents.length : eventIndex;
   const globalWave = [0, 7, 15, 24, 34, 45][stageIndex] + courseIndex;
-  const speed = 11.5 + globalWave * .78 + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
+  const speed = 11.5 + globalWave * .78 + difficulty.speedBonus + (route === "fast" ? 3.5 : route === "safe" ? -1.5 : 0);
   const currentWorld = worldNames[(challenge.world ?? Math.min(6, stageIndex + 1)) - 1];
   const currentUnlock = stageItemUnlocks[stageIndex];
   const routeNodes = stage.place.split(" → ");
   const routePosition = Math.min(routeNodes.length - 1, ((courseIndex + progress / 100) / courseTotal) * (routeNodes.length - 1));
   const routePercent = routeNodes.length > 1 ? (routePosition / (routeNodes.length - 1)) * 100 : 0;
   const currentRouteNode = routeNodes[Math.min(routeNodes.length - 1, Math.round(routePosition))];
+
+  useEffect(() => {
+    window.render_game_to_text = () => JSON.stringify({
+      coordinateSystem: "3 lanes: 0 left, 1 center, 2 right",
+      screen,
+      stage: stageIndex + 1,
+      difficulty: difficulty.label,
+      lane: laneRef.current,
+      fragments,
+      score,
+      event: courseIndex + 1,
+      eventTotal: courseTotal,
+      route,
+      countdown,
+      failed: failedStageIndex !== null,
+      reviewing: Boolean(stageReview),
+    });
+    return () => { delete window.render_game_to_text; };
+  }, [countdown, courseIndex, courseTotal, difficulty.label, failedStageIndex, fragments, route, score, screen, stageIndex, stageReview]);
 
   const terminateAtZero = useCallback(() => {
     if (countdown !== null || terminatingRef.current || reviewingRef.current) return;
@@ -655,11 +683,12 @@ export default function Home() {
     if (statsRef.current.at(-1)?.name !== stage.name) statsRef.current = [...statsRef.current, completed];
     setStats(statsRef.current);
     setFragments(0); setCombo(0); setOutcome(null); setArcadeToast(null); setGameEffect("hit");
-    setStageEnding({ world: stage.name, code: "SIGNAL LOST", title: "전송이 완전히 끊겼다", line: `${stage.payload} 데이터가 0개가 되어 ${stage.name}에서 여정이 멈췄다.`, lost: completed.lost, recovered: completed.recovered, endFragments: 0 });
+    setFailedStageIndex(stageIndex);
+    setStageEnding({ world: stage.name, code: "SIGNAL LOST", title: badEndings[stageIndex].title, line: `${stage.payload} 데이터가 0개가 되어 ${stage.name}에서 여정이 멈췄다.`, lost: completed.lost, recovered: completed.recovered, endFragments: 0 });
     setRadio("루미: “남은 데이터가 0이야. 이번 전송은 여기서 끝났어.”");
     playFx("fail");
     nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 1100);
-  }, [playFx, stage.name, stage.payload]);
+  }, [countdown, playFx, stage.name, stage.payload, stageIndex]);
 
   const move = useCallback((direction: -1 | 1) => {
     if (terminatingRef.current || reviewingRef.current) return;
@@ -669,7 +698,7 @@ export default function Home() {
     engineRef.current?.setLane(next);
     playFx("move");
     setGameEffect("dash"); window.setTimeout(() => setGameEffect(""), 160);
-  }, [countdown, playFx]);
+  }, [playFx]);
 
   const activateBoost = useCallback(() => {
     if (screen !== "playing" || countdown !== null || terminatingRef.current || reviewingRef.current || boostActiveRef.current || boostRef.current < 100) return;
@@ -749,7 +778,7 @@ export default function Home() {
         arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
         return;
       }
-      const damage = boostActiveRef.current ? 3 + Math.floor(stageIndex / 3) : 4 + Math.floor(stageIndex / 2);
+      const damage = boostActiveRef.current ? Math.max(4, Math.round(difficulty.collisionDamage * .65)) : difficulty.collisionDamage;
       const nextFragments = clamp(fragmentsRef.current - damage);
       const applied = fragmentsRef.current - nextFragments;
       fragmentsRef.current = nextFragments;
@@ -771,20 +800,21 @@ export default function Home() {
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [playFx, screen, stage.accent, stageIndex, terminateAtZero]);
+  }, [difficulty.collisionDamage, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (screen !== "playing") return;
+      if (import.meta.env.DEV && event.key === "0") terminateAtZero();
       if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") move(-1);
       if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") move(1);
       if (event.code === "Space") { event.preventDefault(); activateBoost(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activateBoost, move, screen]);
+  }, [activateBoost, move, screen, terminateAtZero]);
 
   useEffect(() => {
     if (screen !== "playing" || !mountRef.current) return;
@@ -1004,14 +1034,13 @@ export default function Home() {
     };
 
     const spawnArcadePattern = () => {
-      const rowCounts = [2, 2, 3, 3, 4, 5];
       const rewards: ArcadeItemKind[] = ["orb"];
       if (energyLevel >= 2) rewards.push("shield");
       if (energyLevel >= 3) rewards.push("repair");
       if (energyLevel >= 4) rewards.push("burst");
       if (energyLevel >= 5) rewards.push("cache");
       if (energyLevel >= 6) rewards.push("hyper");
-      const rows = rowCounts[energyLevel - 1];
+      const rows = stageDifficulties[energyLevel - 1].hazardRows;
       for (let row = 0; row < rows; row++) {
         const rewardLane = ((arcadePattern + row + Math.floor(Math.random() * 2)) % 3) as Lane;
         const unlocked = rewards[Math.min(rewards.length - 1, Math.random() < .42 ? rewards.length - 1 : Math.floor(Math.random() * rewards.length))];
@@ -1131,8 +1160,8 @@ export default function Home() {
       arcadeClock -= dt;
       if (arcadeClock <= 0 && (!activeGroup || activeGroup.position.z < -46 - energyLevel * 3)) {
         spawnArcadePattern();
-        const routePace = routeRef.current === "fast" ? -.14 : routeRef.current === "safe" ? .2 : 0;
-        arcadeClock = Math.max(1.35, 2.55 - energyLevel * .12 + routePace);
+        const routePace = routeRef.current === "fast" ? -.12 : routeRef.current === "safe" ? .18 : 0;
+        arcadeClock = Math.max(1.05, stageDifficulties[energyLevel - 1].spawnInterval + routePace);
       }
       for (let i = arcadeItems.length - 1; i >= 0; i--) {
         const item = arcadeItems[i];
@@ -1347,7 +1376,7 @@ export default function Home() {
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
     setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0)); setMissionRun((value) => value + 1);
-    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(false); setCountdown(3); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
+    setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setFailedStageIndex(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(false); setCountdown(3); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
   };
 
   const continueStage = () => {
@@ -1471,7 +1500,7 @@ export default function Home() {
           <div className="route-track"><i><em style={{ width: `${routePercent}%` }} /></i>{routeNodes.map((node, index) => { const nodePercent = routeNodes.length > 1 ? index / (routeNodes.length - 1) * 100 : 0; return <div key={`${node}-${index}`} className={`route-node ${index <= routePosition ? "passed" : ""} ${index === Math.round(routePosition) ? "current" : ""}`} style={{ "--node-x": `${nodePercent}%` } as React.CSSProperties}><span>{routeIcon(node)}</span><b>{node}</b></div>; })}<div className="route-runner" style={{ "--runner-x": `${routePercent}%` } as React.CSSProperties}><span>P</span><small>HERE</small></div></div>
         </nav>
         <div className={`fragment-hud ${fragments <= 20 ? "critical" : ""}`}><div><span>{stage.payload} 데이터</span><strong>{fragments}<small>/100</small></strong></div><div className="fragment-track"><i style={{ width: `${fragments}%` }} /></div><div className="payload-scale"><span>{stage.payloadSize}</span><b>{dataPaces[stageIndex]}</b></div><div className="run-score"><span>RUN SCORE</span><b>{score.toLocaleString()}</b></div><small>{routeName(route)} · {stage.lesson}</small></div>
-        <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div><em>NEW · {currentUnlock}</em></div>
+        <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")} · {difficulty.label}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div><em>NEW · {currentUnlock}</em></div>
         {shield > 0 && <div className={`shield-hud ${combo >= 2 ? "with-combo" : ""}`}><span>방화벽 실드</span><strong>{"◆".repeat(shield)}</strong><small>충돌 피해 자동 방어</small></div>}
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
@@ -1485,7 +1514,20 @@ export default function Home() {
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
       </section>}
 
-      {screen === "result" && <section className="result-review">
+      {screen === "result" && failedStageIndex !== null && <section className="bad-ending-review" role="dialog" aria-labelledby="bad-ending-title">
+        <div className="bad-ending-noise" aria-hidden="true" />
+        <article>
+          <small>{badEndings[failedStageIndex].code} · SIGNAL LOST</small>
+          <div className="bad-ending-icon" aria-hidden="true"><span>0</span><i /></div>
+          <h1 id="bad-ending-title">{badEndings[failedStageIndex].title}</h1>
+          <p>{badEndings[failedStageIndex].story}</p>
+          <div className="bad-ending-stats"><span>실패 스테이지 <b>{failedStageIndex + 1}</b></span><span>데이터 <b>0/100</b></span><span>난이도 <b>{stageDifficulties[failedStageIndex].label}</b></span></div>
+          <blockquote>“신호가 끊겼어. 위험 표지판을 보고 다른 차선과 경로로 다시 보내자.”</blockquote>
+          <button onClick={startGame}><span>처음부터 다시 전송하기</span><b>RETRY ↻</b></button>
+        </article>
+      </section>}
+
+      {screen === "result" && failedStageIndex === null && <section className="result-review">
         <header className="review-top"><div className="live-brand"><img className="brand-icon" src="/favicon.png" alt="" /><div><b>전송 기록</b><small>THE JOURNEY IS YOUR STORY</small></div></div><div className="review-progress">{["점수", "나의 이야기", "피드백"].map((label, index) => <div key={label} className={resultStep >= index ? "active" : ""}><span>{index + 1}</span><b>{label}</b></div>)}</div></header>
 
         {resultStep === 0 && <article className="score-review">

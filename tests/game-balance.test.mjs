@@ -31,16 +31,24 @@ test("gives every stage a distinct explicit bad ending", () => {
   }
 });
 
-test("keeps the final two stages challenging without a difficulty spike", () => {
+test("keeps the final three stages clearable without a difficulty spike", () => {
+  const stageFour = stageDifficulties[3];
   const stageFive = stageDifficulties[4];
   const stageSix = stageDifficulties[5];
 
-  assert.ok(stageFive.collisionDamage <= 17);
-  assert.ok(stageSix.collisionDamage <= 19);
+  assert.ok(stageFour.collisionDamage <= 14);
+  assert.ok(stageFive.collisionDamage <= 15);
+  assert.ok(stageSix.collisionDamage <= 17);
+  assert.ok(stageFour.hazardRows <= 3);
   assert.ok(stageFive.hazardRows <= 4);
-  assert.ok(stageSix.hazardRows <= 5);
-  assert.ok(stageFive.spawnInterval >= 1.6);
-  assert.ok(stageSix.spawnInterval >= 1.5);
-  assert.ok(stageFive.repairAmount >= 9);
-  assert.ok(stageSix.repairAmount >= 12);
+  assert.ok(stageSix.hazardRows <= 4);
+  assert.ok(stageFour.spawnInterval >= 1.8);
+  assert.ok(stageFive.spawnInterval >= 1.7);
+  assert.ok(stageSix.spawnInterval >= 1.6);
+  assert.ok(stageFour.repairAmount >= 7);
+  assert.ok(stageFive.repairAmount >= 10);
+  assert.ok(stageSix.repairAmount >= 14);
+  assert.ok(stageFour.criticalDamageScale <= .85);
+  assert.ok(stageFive.criticalDamageScale <= .8);
+  assert.ok(stageSix.criticalDamageScale <= .75);
 });

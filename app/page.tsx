@@ -779,7 +779,9 @@ export default function Home() {
         arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
         return;
       }
-      const damage = boostActiveRef.current ? Math.max(4, Math.round(difficulty.collisionDamage * .65)) : difficulty.collisionDamage;
+      const criticalScale = stageIndex >= 3 && fragmentsRef.current <= 30 ? difficulty.criticalDamageScale : 1;
+      const baseDamage = boostActiveRef.current ? Math.max(4, Math.round(difficulty.collisionDamage * .65)) : difficulty.collisionDamage;
+      const damage = Math.max(3, Math.round(baseDamage * criticalScale));
       const nextFragments = clamp(fragmentsRef.current - damage);
       const applied = fragmentsRef.current - nextFragments;
       fragmentsRef.current = nextFragments;
@@ -801,7 +803,7 @@ export default function Home() {
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [difficulty.collisionDamage, difficulty.repairAmount, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
+  }, [difficulty.collisionDamage, difficulty.criticalDamageScale, difficulty.repairAmount, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 

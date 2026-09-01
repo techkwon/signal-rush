@@ -662,6 +662,7 @@ export default function Home() {
       lane: laneRef.current,
       fragments,
       score,
+      completedStages: stats.length,
       event: courseIndex + 1,
       eventTotal: courseTotal,
       route,
@@ -670,7 +671,7 @@ export default function Home() {
       reviewing: Boolean(stageReview),
     });
     return () => { delete window.render_game_to_text; };
-  }, [countdown, courseIndex, courseTotal, difficulty.label, failedStageIndex, fragments, route, score, screen, stageIndex, stageReview]);
+  }, [countdown, courseIndex, courseTotal, difficulty.label, failedStageIndex, fragments, route, score, screen, stageIndex, stageReview, stats.length]);
 
   const terminateAtZero = useCallback(() => {
     if (countdown !== null || terminatingRef.current || reviewingRef.current) return;
@@ -1379,6 +1380,63 @@ export default function Home() {
     setFragments(100); setScore(0); setCombo(0); setBoostCharge(0); setBoostActive(false); setShield(0); setRoute("balanced"); setStageIndex(0); setEventIndex(0); setIsRoute(false); setProgress(0); setLostTotal(0); setRecoveredTotal(0); setStats([]); setDecisions([]); setOutcome(null); setStageEnding(null); setFailedStageIndex(null); setStageReview(null); setArcadeToast(null); setGameEffect(""); setRadio(stages[0].story); setChapterFlash(false); setCountdown(3); setWebglError(false); setResultStep(0); setPlayerName(""); setSubmitState("idle"); setSubmitMessage(""); setScreen("playing");
   };
 
+  const retryCurrentStage = () => {
+    if (failedStageIndex === null) return;
+    if (soundOnRef.current) { ensureAudio(); playGameFx(audioRef.current, "start"); }
+    if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
+    if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
+
+    const retryStage = failedStageIndex;
+    const retryStageName = stages[retryStage].name;
+    const stageScore = stageScoreStartRef.current;
+    statsRef.current = statsRef.current.filter((item) => item.name !== retryStageName);
+    decisionsRef.current = decisionsRef.current.filter((item) => item.stage !== retryStageName);
+    setStats(statsRef.current);
+    setDecisions(decisionsRef.current);
+    setLostTotal((value) => Math.max(0, value - stageLostRef.current));
+    setRecoveredTotal((value) => Math.max(0, value - stageRecoveredRef.current));
+
+    laneRef.current = 1;
+    fragmentsRef.current = 100;
+    scoreRef.current = stageScore;
+    comboRef.current = 0;
+    boostRef.current = 0;
+    boostActiveRef.current = false;
+    shieldRef.current = 0;
+    routeRef.current = "balanced";
+    stageStartRef.current = 100;
+    stageLostRef.current = 0;
+    stageRecoveredRef.current = 0;
+    terminatingRef.current = false;
+    reviewingRef.current = false;
+    resolvingRef.current = false;
+
+    setActiveEvents(pickStageEvents(retryStage));
+    setActiveRoute(pickRouteChallenge(retryStage));
+    setMissionRun((value) => value + 1);
+    setFragments(100);
+    setScore(stageScore);
+    setCombo(0);
+    setBoostCharge(0);
+    setBoostActive(false);
+    setShield(0);
+    setRoute("balanced");
+    setEventIndex(0);
+    setIsRoute(false);
+    setProgress(0);
+    setOutcome(null);
+    setStageEnding(null);
+    setFailedStageIndex(null);
+    setStageReview(null);
+    setArcadeToast(null);
+    setGameEffect("");
+    setRadio(stages[retryStage].story);
+    setChapterFlash(false);
+    setCountdown(3);
+    setWebglError(false);
+    setScreen("playing");
+  };
+
   const continueStage = () => {
     if (!stageReview) return;
     setStageReview(null);
@@ -1523,7 +1581,10 @@ export default function Home() {
           <p>{badEndings[failedStageIndex].story}</p>
           <div className="bad-ending-stats"><span>실패 스테이지 <b>{failedStageIndex + 1}</b></span><span>데이터 <b>0/100</b></span><span>난이도 <b>{stageDifficulties[failedStageIndex].label}</b></span></div>
           <blockquote>“신호가 끊겼어. 위험 표지판을 보고 다른 차선과 경로로 다시 보내자.”</blockquote>
-          <button onClick={startGame}><span>처음부터 다시 전송하기</span><b>RETRY ↻</b></button>
+          <div className="bad-ending-actions">
+            <button className="retry-stage" onClick={retryCurrentStage}><span>현재 스테이지 다시 시작</span><b>STAGE RETRY ↻</b></button>
+            <button className="retry-all" onClick={startGame}><span>처음부터 다시 시작</span><b>FULL RESTART ↻</b></button>
+          </div>
         </article>
       </section>}
 

@@ -732,7 +732,7 @@ export default function Home() {
       playFx("boost");
       engineRef.current?.triggerEffect(1, "#55d8ff");
     } else if (kind === "repair") {
-      const nextFragments = clamp(fragmentsRef.current + 4);
+      const nextFragments = clamp(fragmentsRef.current + difficulty.repairAmount);
       const recovered = nextFragments - fragmentsRef.current;
       fragmentsRef.current = nextFragments;
       scoreRef.current += 45;
@@ -801,7 +801,7 @@ export default function Home() {
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [difficulty.collisionDamage, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
+  }, [difficulty.collisionDamage, difficulty.repairAmount, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 

@@ -532,6 +532,7 @@ export default function Home() {
   const arcadeToastTimerRef = useRef<number | null>(null);
   const terminatingRef = useRef(false);
   const reviewingRef = useRef(false);
+  const emergencyRecoveryUsedRef = useRef(false);
   const progressRef = useRef(0);
 
   const [screen, setScreen] = useState<Screen>("intro");
@@ -691,6 +692,20 @@ export default function Home() {
     nextTimerRef.current = window.setTimeout(() => { setStageEnding(null); setScreen("result"); }, 1100);
   }, [countdown, playFx, stage.name, stage.payload, stageIndex]);
 
+  const tryEmergencyRecovery = useCallback(() => {
+    if (difficulty.rescueAmount <= 0 || emergencyRecoveryUsedRef.current) return false;
+    emergencyRecoveryUsedRef.current = true;
+    fragmentsRef.current = difficulty.rescueAmount;
+    stageRecoveredRef.current += difficulty.rescueAmount;
+    setFragments(difficulty.rescueAmount);
+    setRecoveredTotal((value) => value + difficulty.rescueAmount);
+    setArcadeToast({ kind: "repair", text: `긴급 재전송 · 조각 +${difficulty.rescueAmount}` });
+    setRadio(`루미: “연결을 한 번 더 살렸어! ${difficulty.rescueAmount}개 조각으로 계속 가자.”`);
+    playFx("boost");
+    engineRef.current?.triggerEffect(1, stage.accent);
+    return true;
+  }, [difficulty.rescueAmount, playFx, stage.accent]);
+
   const move = useCallback((direction: -1 | 1) => {
     if (terminatingRef.current || reviewingRef.current) return;
     const next = Math.max(0, Math.min(2, laneRef.current + direction)) as Lane;
@@ -793,7 +808,7 @@ export default function Home() {
       playFx("hit");
       engineRef.current?.triggerEffect(-4, stage.accent);
       window.setTimeout(() => setGameEffect(""), 300);
-      if (nextFragments === 0) terminateAtZero();
+      if (nextFragments === 0 && !tryEmergencyRecovery()) terminateAtZero();
     } else {
       scoreRef.current += boostActiveRef.current ? 30 : 15;
       comboRef.current = Math.min(9, comboRef.current + 1);
@@ -803,7 +818,7 @@ export default function Home() {
     }
     if (arcadeToastTimerRef.current) window.clearTimeout(arcadeToastTimerRef.current);
     arcadeToastTimerRef.current = window.setTimeout(() => setArcadeToast(null), 560);
-  }, [difficulty.collisionDamage, difficulty.criticalDamageScale, difficulty.repairAmount, playFx, screen, stage.accent, stageIndex, terminateAtZero]);
+  }, [difficulty.collisionDamage, difficulty.criticalDamageScale, difficulty.repairAmount, playFx, screen, stage.accent, stageIndex, terminateAtZero, tryEmergencyRecovery]);
 
   useEffect(() => { arcadeResolveRef.current = resolveArcade; }, [resolveArcade]);
 
@@ -1046,7 +1061,10 @@ export default function Home() {
       const rows = stageDifficulties[energyLevel - 1].hazardRows;
       for (let row = 0; row < rows; row++) {
         const rewardLane = ((arcadePattern + row + Math.floor(Math.random() * 2)) % 3) as Lane;
-        const unlocked = rewards[Math.min(rewards.length - 1, Math.random() < .42 ? rewards.length - 1 : Math.floor(Math.random() * rewards.length))];
+        const stageDifficulty = stageDifficulties[energyLevel - 1];
+        const unlocked = energyLevel >= 5 && Math.random() < stageDifficulty.repairChance
+          ? "repair"
+          : rewards[Math.min(rewards.length - 1, Math.random() < .42 ? rewards.length - 1 : Math.floor(Math.random() * rewards.length))];
         const z = -27 - row * 5.2;
         spawnArcadeItem(rewardLane, unlocked, z, unlocked === "hyper" ? 1.08 : 1);
         const dangerLane = ((rewardLane + 1 + (row % 2)) % 3) as Lane;
@@ -1291,7 +1309,7 @@ export default function Home() {
     if (isRoute) {
       const nextRoute = option.route ?? "balanced";
       const routeDelta = boostActiveRef.current ? Math.round(option.delta * .75) : option.delta;
-      const nextFragments = clamp(fragmentsRef.current + routeDelta);
+      let nextFragments = clamp(fragmentsRef.current + routeDelta);
       const applied = nextFragments - fragmentsRef.current;
       const earnedPoints = pointsFor(option.delta, "route") * (boostActiveRef.current ? 2 : 1);
       fragmentsRef.current = nextFragments;
@@ -1310,7 +1328,10 @@ export default function Home() {
       engineRef.current?.triggerEffect(1, stage.accent);
       setGameEffect("boost"); window.setTimeout(() => setGameEffect(""), 360);
       setRadio(`픽셀: “${option.label}로 친구의 폰까지 마무리할게!”`);
-      if (nextFragments === 0) { terminateAtZero(); return; }
+      if (nextFragments === 0) {
+        if (!tryEmergencyRecovery()) { terminateAtZero(); return; }
+        nextFragments = fragmentsRef.current;
+      }
       nextTimerRef.current = window.setTimeout(() => {
         setOutcome(null);
         const completed = finishStage(nextFragments);
@@ -1328,7 +1349,7 @@ export default function Home() {
     if (routeRef.current === "fast") delta = delta < 0 ? Math.round(delta * 1.25) : Math.round(delta * .82);
     if (routeRef.current === "safe") delta = delta < 0 ? Math.round(delta * .72) : Math.round(delta * 1.2);
     if (boostActiveRef.current && delta < 0) delta = Math.round(delta * .75);
-    const nextFragments = clamp(fragmentsRef.current + delta);
+    let nextFragments = clamp(fragmentsRef.current + delta);
     const applied = nextFragments - fragmentsRef.current;
     const nextCombo = delta >= 0 ? Math.min(9, comboRef.current + 1) : 0;
     comboRef.current = nextCombo;
@@ -1356,7 +1377,10 @@ export default function Home() {
     setGameEffect(delta < 0 ? "hit" : "boost"); window.setTimeout(() => setGameEffect(""), 360);
     setRadio(applied < 0 ? `픽셀: “조각이 흩어졌어! ${option.detail}.”` : applied > 0 ? `루미: “좋아, ${option.detail}.”` : `픽셀: “${option.detail}. 계속 달리자!”`);
 
-    if (nextFragments === 0) { terminateAtZero(); return; }
+    if (nextFragments === 0) {
+      if (!tryEmergencyRecovery()) { terminateAtZero(); return; }
+      nextFragments = fragmentsRef.current;
+    }
 
     nextTimerRef.current = window.setTimeout(() => {
       setOutcome(null);
@@ -1367,7 +1391,7 @@ export default function Home() {
         setRadio("루미: “친구 폰 앞 마지막 갈림길이야. 남은 조각과 경로 조건을 함께 보고 골라!”");
       }
     }, 280);
-  }, [activeEvents.length, challenge, eventIndex, finishStage, isRoute, playFx, screen, stageIndex, terminateAtZero]);
+  }, [activeEvents.length, challenge, eventIndex, finishStage, isRoute, playFx, screen, stageIndex, terminateAtZero, tryEmergencyRecovery]);
 
   useEffect(() => { resolveRef.current = resolveChallenge; }, [resolveChallenge]);
 
@@ -1375,7 +1399,7 @@ export default function Home() {
     if (soundOnRef.current) { ensureAudio(); playGameFx(audioRef.current, "start"); }
     if (nextTimerRef.current) window.clearTimeout(nextTimerRef.current);
     if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
-    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; shieldRef.current = 0; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false;
+    laneRef.current = 1; fragmentsRef.current = 100; scoreRef.current = 0; comboRef.current = 0; boostRef.current = 0; boostActiveRef.current = false; shieldRef.current = 0; routeRef.current = "balanced"; terminatingRef.current = false; reviewingRef.current = false; emergencyRecoveryUsedRef.current = false;
     stageScoreStartRef.current = 0;
     stageStartRef.current = 100; stageLostRef.current = 0; stageRecoveredRef.current = 0; statsRef.current = []; decisionsRef.current = [];
     setActiveEvents(pickStageEvents(0)); setActiveRoute(pickRouteChallenge(0)); setMissionRun((value) => value + 1);
@@ -1412,6 +1436,7 @@ export default function Home() {
     terminatingRef.current = false;
     reviewingRef.current = false;
     resolvingRef.current = false;
+    emergencyRecoveryUsedRef.current = false;
 
     setActiveEvents(pickStageEvents(retryStage));
     setActiveRoute(pickRouteChallenge(retryStage));
@@ -1458,6 +1483,7 @@ export default function Home() {
     boostRef.current = 0;
     boostActiveRef.current = false;
     shieldRef.current = 0;
+    emergencyRecoveryUsedRef.current = false;
     setFragments(100);
     setRoute("balanced");
     setCombo(0);
@@ -1542,7 +1568,7 @@ export default function Home() {
           <small>3·2·1 이후 출발 · 방향키·A/D·스와이프 이동 · 뒤 스테이지일수록 아이템이 빠르고 불규칙해집니다</small>
         </div>
         <div className="pixel-portrait"><div className="portrait-glow" /><img src="/game/hero-pixel.png" alt="메시지 봉투를 들고 달리는 귀여운 전송 요정 픽셀" /><div className="pixel-speech"><b>픽셀</b><span>“한 번에 하나씩, 친구에게 꼭 전할게!”</span></div></div>
-        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{String(index + 1).padStart(2, "0")}</span><b>친구에게 {item.payload} 보내기</b><small>집 출발 · {item.payloadSize} · {dataPaces[index]}</small></div>)}</div>
+        <div className="story-route">{stages.map((item, index) => <div key={item.name}><span>{index === 0 ? "P" : String(index + 1).padStart(2, "0")}</span><b>{index === 0 ? "프롤로그 · 조작 익히기" : `친구에게 ${item.payload} 보내기`}</b><small>집 출발 · {item.payloadSize} · {index === 0 ? "이동·수집·회피 연습" : dataPaces[index]}</small></div>)}</div>
         <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 평균 도착률 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
@@ -1563,7 +1589,7 @@ export default function Home() {
         <div className="energy-hud"><small>DATA SCALE {String(stageIndex + 1).padStart(2, "0")} · {difficulty.label}</small><strong>{stage.payload}</strong><div>{[0,1,2,3,4,5].map((item) => <i key={item} className={item <= stageIndex ? "on" : ""} />)}</div><em>NEW · {currentUnlock}</em></div>
         {shield > 0 && <div className={`shield-hud ${combo >= 2 ? "with-combo" : ""}`}><span>방화벽 실드</span><strong>{"◆".repeat(shield)}</strong><small>충돌 피해 자동 방어</small></div>}
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
-        <div className="challenge-hud"><span>STAGE {stageIndex + 1} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
+        <div className={`challenge-hud ${stageIndex === 0 ? "tutorial-hud" : ""}`}><span>{stageIndex === 0 ? "PROLOGUE" : `STAGE ${stageIndex + 1}`} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{stageIndex === 0 ? "← → 차선 이동 · 빛나는 신호 수집 · 붉은 간섭 회피" : `${dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다`}</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
         {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize} · {dataPaces[stageIndex]}</small><strong>{stage.payload}</strong><span>{stage.story}</span></div>}
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}

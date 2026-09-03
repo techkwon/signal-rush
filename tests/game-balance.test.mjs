@@ -13,11 +13,14 @@ test("raises every major difficulty axis from stage 1 through stage 6", () => {
     const previous = stageDifficulties[index - 1];
     const current = stageDifficulties[index];
 
-    assert.ok(current.collisionDamage > previous.collisionDamage);
+    assert.ok(current.collisionDamage >= previous.collisionDamage);
     assert.ok(current.hazardRows >= previous.hazardRows);
-    assert.ok(current.spawnInterval < previous.spawnInterval);
-    assert.ok(current.speedBonus > previous.speedBonus);
+    assert.ok(current.spawnInterval <= previous.spawnInterval);
+    assert.ok(current.speedBonus >= previous.speedBonus);
   }
+
+  assert.ok(stageDifficulties.at(-1).collisionDamage > stageDifficulties[0].collisionDamage);
+  assert.ok(stageDifficulties.at(-1).speedBonus > stageDifficulties[0].speedBonus);
 });
 
 test("gives every stage a distinct explicit bad ending", () => {
@@ -51,4 +54,30 @@ test("keeps the final three stages clearable without a difficulty spike", () => 
   assert.ok(stageFour.criticalDamageScale <= .85);
   assert.ok(stageFive.criticalDamageScale <= .8);
   assert.ok(stageSix.criticalDamageScale <= .75);
+});
+
+test("makes large-data stages survivable through stronger recovery", () => {
+  const stageFive = stageDifficulties[4];
+  const stageSix = stageDifficulties[5];
+
+  assert.ok(stageFive.collisionDamage <= 14);
+  assert.ok(stageSix.collisionDamage <= 15);
+  assert.ok(stageFive.hazardRows <= 3);
+  assert.ok(stageSix.hazardRows <= 4);
+  assert.ok(stageFive.repairAmount >= 12);
+  assert.ok(stageSix.repairAmount >= 16);
+  assert.ok(stageFive.repairChance >= .45);
+  assert.ok(stageSix.repairChance >= .5);
+  assert.ok(stageFive.rescueAmount >= 25);
+  assert.ok(stageSix.rescueAmount >= 30);
+});
+
+test("uses stage one as a forgiving control-learning prologue", () => {
+  const prologue = stageDifficulties[0];
+
+  assert.equal(prologue.label, "프롤로그");
+  assert.equal(prologue.hazardRows, 1);
+  assert.ok(prologue.collisionDamage <= 4);
+  assert.ok(prologue.spawnInterval >= 2.8);
+  assert.ok(prologue.criticalDamageScale <= .6);
 });

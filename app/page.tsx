@@ -852,8 +852,8 @@ export default function Home() {
     scene.background = new THREE.Color(stage.color);
     scene.fog = new THREE.Fog(stage.color, 45, 145);
     const camera = new THREE.PerspectiveCamera(55, 1, .3, 160);
-    camera.position.set(0, 6.35, 13.6);
-    camera.lookAt(0, 1.45, -18);
+    camera.position.set(0, 7.1, 18.5);
+    camera.lookAt(0, 1.45, -20);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1068,7 +1068,7 @@ export default function Home() {
         const unlocked = energyLevel >= 5 && Math.random() < stageDifficulty.repairChance
           ? "repair"
           : rewards[Math.min(rewards.length - 1, Math.random() < .42 ? rewards.length - 1 : Math.floor(Math.random() * rewards.length))];
-        const z = -27 - row * 5.2;
+        const z = stageDifficulty.itemSpawnZ - row * 6.2;
         spawnArcadeItem(rewardLane, unlocked, z, unlocked === "hyper" ? 1.08 : 1);
         const dangerLane = ((rewardLane + 1 + (row % 2)) % 3) as Lane;
         spawnArcadeItem(dangerLane, "hazard", z, .92 + energyLevel * .025);
@@ -1189,7 +1189,7 @@ export default function Home() {
       }
       for (let i = arcadeItems.length - 1; i >= 0; i--) {
         const item = arcadeItems[i];
-        item.group.position.z += worldTravel * 1.12 * item.speed;
+        item.group.position.z += stageDifficulties[energyLevel - 1].itemApproachSpeed * dt * item.speed;
         item.group.position.x = item.baseX + Math.sin(elapsed * (1.8 + energyLevel * .22) + item.phase) * item.drift;
         item.group.rotation.y += dt * (item.kind === "hazard" ? 7.2 : item.kind === "hyper" ? 6.2 : 4.8);
         item.group.position.y += Math.sin(elapsed * 8 + i) * dt * .18;
@@ -1246,12 +1246,12 @@ export default function Home() {
       if (!motionReducedRef.current) {
         const shake = impactShake > 0 ? (Math.random() - .5) * impactShake : 0;
         camera.position.x = Math.sin(elapsed * 1.7) * .08 + shake;
-        camera.position.y = 6.35 + Math.sin(elapsed * 2.3) * .035 + shake * .35;
-      } else { camera.position.x = 0; camera.position.y = 6.35; }
+        camera.position.y = 7.1 + Math.sin(elapsed * 2.3) * .035 + shake * .35;
+      } else { camera.position.x = 0; camera.position.y = 7.1; }
       impactShake = Math.max(0, impactShake - dt * 2.4);
       camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3.5);
       camera.updateProjectionMatrix();
-      camera.lookAt(0, 1.45, -18);
+      camera.lookAt(0, 1.45, -20);
       renderer.render(scene, camera);
     };
     animate();

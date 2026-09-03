@@ -89,3 +89,11 @@ test("uses stage one as a forgiving control-learning prologue", () => {
     "연습 4/4 · 선택하기",
   ]);
 });
+
+test("keeps collectible reaction time above 1.3 seconds in every stage", () => {
+  for (const difficulty of stageDifficulties) {
+    const fastestItemMultiplier = 1 + (stageDifficulties.indexOf(difficulty) + 1) * .018 + .035;
+    const reactionSeconds = (4.7 - difficulty.itemSpawnZ) / (difficulty.itemApproachSpeed * fastestItemMultiplier);
+    assert.ok(reactionSeconds >= 1.3, `${difficulty.label}: ${reactionSeconds.toFixed(2)} seconds`);
+  }
+});

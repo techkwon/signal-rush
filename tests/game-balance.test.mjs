@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   badEndings,
+  prologueGuides,
   stageDifficulties,
 } from "../lib/game-balance.js";
 
@@ -80,4 +81,11 @@ test("uses stage one as a forgiving control-learning prologue", () => {
   assert.ok(prologue.collisionDamage <= 4);
   assert.ok(prologue.spawnInterval >= 2.8);
   assert.ok(prologue.criticalDamageScale <= .6);
+  assert.equal(prologueGuides.length, 4);
+  assert.deepEqual(prologueGuides.map((guide) => guide.eyebrow), [
+    "연습 1/4 · 움직이기",
+    "연습 2/4 · 수집하기",
+    "연습 3/4 · 회피하기",
+    "연습 4/4 · 선택하기",
+  ]);
 });

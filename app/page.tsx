@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Switch } from "@/components/ui/switch";
-import { badEndings, stageDifficulties } from "@/lib/game-balance";
+import { badEndings, prologueGuides, stageDifficulties } from "@/lib/game-balance";
 
 type Lane = 0 | 1 | 2;
 type RouteMode = "fast" | "balanced" | "safe";
@@ -653,6 +653,8 @@ export default function Home() {
   const routePosition = Math.min(routeNodes.length - 1, ((courseIndex + progress / 100) / courseTotal) * (routeNodes.length - 1));
   const routePercent = routeNodes.length > 1 ? (routePosition / (routeNodes.length - 1)) * 100 : 0;
   const currentRouteNode = routeNodes[Math.min(routeNodes.length - 1, Math.round(routePosition))];
+  const prologueGuideIndex = Math.min(3, isRoute ? 3 : eventIndex);
+  const prologueGuide = prologueGuides[prologueGuideIndex];
 
   useEffect(() => {
     window.render_game_to_text = () => JSON.stringify({
@@ -670,9 +672,10 @@ export default function Home() {
       countdown,
       failed: failedStageIndex !== null,
       reviewing: Boolean(stageReview),
+      guide: stageIndex === 0 ? prologueGuide.eyebrow : null,
     });
     return () => { delete window.render_game_to_text; };
-  }, [countdown, courseIndex, courseTotal, difficulty.label, failedStageIndex, fragments, route, score, screen, stageIndex, stageReview, stats.length]);
+  }, [countdown, courseIndex, courseTotal, difficulty.label, failedStageIndex, fragments, prologueGuide.eyebrow, route, score, screen, stageIndex, stageReview, stats.length]);
 
   const terminateAtZero = useCallback(() => {
     if (countdown !== null || terminatingRef.current || reviewingRef.current) return;
@@ -1572,7 +1575,7 @@ export default function Home() {
         <aside className="honor-board"><div className="honor-title"><span>HALL OF SIGNAL</span><h2>명예의 전당</h2><small>점수 · 평균 도착률 순</small></div><div className="honor-list">{leaderLoading ? <p>기록을 불러오는 중…</p> : leaderboard.length ? leaderboard.slice(0, 5).map((entry, index) => <div key={entry.id}><span>{index + 1}</span><b>{entry.player_name}</b><strong>{entry.score.toLocaleString()}점</strong><small>{entry.fragments}% 도착</small></div>) : <p>첫 번째 전송 기록의 주인공이 되어 보세요.</p>}</div></aside>
       </section>}
 
-      {screen === "playing" && <section className={`live-runner energy-${stageIndex + 1} route-${route} ${gameEffect} ${boostActive ? "overdrive" : ""}`}>
+      {screen === "playing" && <section className={`live-runner energy-${stageIndex + 1} route-${route} ${gameEffect} ${boostActive ? "overdrive" : ""} ${stageIndex === 0 ? `tutorial-step-${prologueGuideIndex}` : ""}`}>
         <div ref={mountRef} className="webgl-stage" aria-label="Three.js 3D 러너 게임 화면" />
         <div className="game-speed-lines" aria-hidden="true" /><div className="game-impact" aria-hidden="true" />
         {countdown !== null && <div className="start-countdown" role="status" aria-live="assertive"><small>TRANSMISSION READY</small><strong key={countdown}>{countdown}</strong><span>친구에게 보낼 준비!</span></div>}
@@ -1590,11 +1593,12 @@ export default function Home() {
         {shield > 0 && <div className={`shield-hud ${combo >= 2 ? "with-combo" : ""}`}><span>방화벽 실드</span><strong>{"◆".repeat(shield)}</strong><small>충돌 피해 자동 방어</small></div>}
         {combo >= 2 && <div className="combo-hud"><span>CHAIN</span><strong>×{combo}</strong><small>연속 안정 전송</small></div>}
         <div className={`challenge-hud ${stageIndex === 0 ? "tutorial-hud" : ""}`}><span>{stageIndex === 0 ? "PROLOGUE" : `STAGE ${stageIndex + 1}`} · WAVE {courseIndex + 1}/{courseTotal} · {isRoute ? "ROUTE CHOICE" : challenge.kicker}</span><strong>{challenge.prompt}</strong><small>{stageIndex === 0 ? "← → 차선 이동 · 빛나는 신호 수집 · 붉은 간섭 회피" : `${dataPaces[stageIndex]} · 큰 데이터는 보낼 조각이 많아 더 오래 달립니다`}</small><div className="approach-bar"><i style={{ width: `${progress}%` }} /></div><div className="stage-wave">{Array.from({ length: courseTotal }, (_, index) => <i key={index} className={index <= courseIndex ? "on" : ""} />)}</div></div>
+        {stageIndex === 0 && <aside className="tutorial-coach" aria-live="polite"><div className="tutorial-coach-avatar">L</div><div><small>{prologueGuide.eyebrow}</small><strong>{prologueGuide.title}</strong><p>{prologueGuide.body}</p><div className="tutorial-steps" aria-label={`프롤로그 안내 ${prologueGuideIndex + 1}/4`}>{prologueGuides.map((_, index) => <i key={index} className={index <= prologueGuideIndex ? "on" : ""} />)}</div></div></aside>}
         {chapterFlash && <div className="chapter-flash"><small>ROUND {String(stageIndex + 1).padStart(2, "0")} · {stage.payloadSize} · {dataPaces[stageIndex]}</small><strong>{stage.payload}</strong><span>{stage.story}</span></div>}
         {outcome && <div className={`outcome-float ${outcome.delta < 0 ? "damage" : "recover"}`}><strong>{outcome.points > 0 ? "+" : ""}{outcome.points}점</strong><b>{outcome.delta > 0 ? `조각 +${outcome.delta}` : outcome.delta === 0 ? "조각 유지" : `조각 ${outcome.delta}`}</b>{outcome.combo >= 2 && <em>CHAIN ×{outcome.combo}</em>}<span>{outcome.text}</span></div>}
         {arcadeToast && <div className={`arcade-toast ${arcadeToast.kind}`}>{arcadeToast.text}</div>}
         {stageEnding && <div className={`stage-ending ending-${stageIndex + 1} ${stageEnding.code === "SIGNAL LOST" ? "ending-fail" : ""}`}><div className="ending-energy"><i /><i /><i /></div><small>{stageEnding.code === "SIGNAL LOST" ? "TRANSMISSION TERMINATED" : `CHAPTER ${String(stageIndex + 1).padStart(2, "0")} CLEAR`} · {stageEnding.code}</small><strong>{stageEnding.title}</strong><p>{stageEnding.line}</p><div><span>도착 조각 <b>{stageEnding.endFragments}</b></span><span>손실 <b>−{stageEnding.lost}</b></span><span>복구 <b>+{stageEnding.recovered}</b></span></div></div>}
-        {stageReview && <div className={`stage-review review-stage-${stageIndex + 1}`} role="dialog" aria-modal="true" aria-labelledby="stage-review-title"><article><div className="review-kicker"><span>STAGE {String(stageIndex + 1).padStart(2, "0")} CLEAR</span><b>{stage.payload} · {stage.payloadSize}</b></div><h1 id="stage-review-title">{stageReview.title}</h1><div className="stage-narrative"><div className="story-illustration"><img src="/game/stage-storyboard.png" alt={`친구가 ${stage.payload} 데이터를 받는 장면`} style={{ "--stage-col": stageIndex % 3, "--stage-row": Math.floor(stageIndex / 3) } as React.CSSProperties} /></div><div><p className="stage-story">{stageReview.story} {stageReview.line}</p><blockquote><small>친구의 답장</small>“{stage.friendReply}”</blockquote></div></div><div className="stage-score-grid"><div><span>스테이지 점수</span><strong>+{stageReview.stageScore.toLocaleString()}</strong></div><div><span>누적 점수</span><strong>{stageReview.totalScore.toLocaleString()}</strong></div><div><span>도착한 데이터</span><strong>{stageReview.endFragments}<small>/100</small></strong></div></div><div className="stage-balance"><span>잃은 조각 <b>−{stageReview.lost}</b></span><span>되찾은 조각 <b>+{stageReview.recovered}</b></span><span>선택한 경로 <b>{routeName(route)}</b></span></div><button onClick={continueStage}><span>{stageIndex < stages.length - 1 ? `새 전송 시작 · 친구에게 ${stages[stageIndex + 1].payload} 보내기` : "최종 전송 결과 보기"}</span><b>→</b></button><small>다음 스테이지는 새로운 데이터 조각 100개로 시작합니다.</small></article></div>}
+        {stageReview && <div className={`stage-review review-stage-${stageIndex + 1}`} role="dialog" aria-modal="true" aria-labelledby="stage-review-title"><article><div className="review-kicker"><span>{stageIndex === 0 ? "PROLOGUE COMPLETE" : `STAGE ${String(stageIndex + 1).padStart(2, "0")} CLEAR`}</span><b>{stage.payload} · {stage.payloadSize}</b></div><h1 id="stage-review-title">{stageReview.title}</h1><div className="stage-narrative"><div className="story-illustration"><img src="/game/stage-storyboard.png" alt={`친구가 ${stage.payload} 데이터를 받는 장면`} style={{ "--stage-col": stageIndex % 3, "--stage-row": Math.floor(stageIndex / 3) } as React.CSSProperties} /></div><div><p className="stage-story">{stageReview.story} {stageReview.line}</p><blockquote><small>친구의 답장</small>“{stage.friendReply}”</blockquote></div></div><div className="stage-score-grid"><div><span>스테이지 점수</span><strong>+{stageReview.stageScore.toLocaleString()}</strong></div><div><span>누적 점수</span><strong>{stageReview.totalScore.toLocaleString()}</strong></div><div><span>도착한 데이터</span><strong>{stageReview.endFragments}<small>/100</small></strong></div></div><div className="stage-balance"><span>잃은 조각 <b>−{stageReview.lost}</b></span><span>되찾은 조각 <b>+{stageReview.recovered}</b></span><span>선택한 경로 <b>{routeName(route)}</b></span></div><button onClick={continueStage}><span>{stageIndex === 0 ? "연습 완료 · 이미지 전송 시작" : stageIndex < stages.length - 1 ? `새 전송 시작 · 친구에게 ${stages[stageIndex + 1].payload} 보내기` : "최종 전송 결과 보기"}</span><b>→</b></button><small>{stageIndex === 0 ? "이제부터 배운 조작으로 실제 전송 임무에 도전합니다." : "다음 스테이지는 새로운 데이터 조각 100개로 시작합니다."}</small></article></div>}
         <div className="radio-line" aria-live="polite"><div className="radio-avatar">P</div><p><small>PIXEL RADIO</small>{radio}</p></div>
         <div className="live-controls"><button onClick={() => move(-1)} aria-label="왼쪽으로 이동"><span>←</span><small>왼쪽</small></button><button className={`boost-button ${boostCharge >= 100 ? "ready" : ""}`} onClick={activateBoost} disabled={boostCharge < 100 || boostActive} style={{ "--boost": `${boostCharge * 3.6}deg` } as React.CSSProperties} aria-label={`부스트 ${boostCharge}%`}><b>{boostActive ? "ON" : `${boostCharge}%`}</b><small>{boostActive ? "OVERDRIVE" : boostCharge >= 100 ? "BOOST!" : "충전"}</small></button><button onClick={() => move(1)} aria-label="오른쪽으로 이동"><small>오른쪽</small><span>→</span></button></div>
         {webglError && <div className="webgl-error"><strong>3D 화면을 시작하지 못했습니다.</strong><span>브라우저의 하드웨어 가속을 켠 뒤 다시 시도해 주세요.</span><button onClick={startGame}>다시 시도</button></div>}
